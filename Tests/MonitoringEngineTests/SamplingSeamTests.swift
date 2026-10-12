@@ -1272,6 +1272,184 @@ struct SamplingSeamTests {
     #expect(try archive.preview(data).migratedFrom == 0)
   }
 
+  @Test("Dashboard stays simple at rest and discloses detail on demand")
+  func dashboardDisclosesDetailOnDemand() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let evaluation = pipeline.evaluate(Array(cpu.prefix(13)))
+    let summary = makeDashboard(evaluation)
+    #expect(summary.headline == "1 active incident")
+    #expect(summary.activeIncidentCount == 1)
+    #expect(summary.totalIncidentCount == 1)
+    #expect(summary.incidents.isEmpty)
+    #expect(summary.systemHealth == .unknown)
+    #expect(summary.monitoring.headline == "Monitoring normal")
+    let detailed = makeDashboard(evaluation, detail: .detailed)
+    #expect(detailed.incidents.count == 1)
+    let entry = try #require(detailed.incidents.first)
+    #expect(entry.isActive)
+    #expect(entry.startedAt == start.addingTimeInterval(5))
+    let quiet = makeDashboard(pipeline.evaluate(Array(cpu.prefix(4))))
+    #expect(quiet.headline == "No active incidents")
+    #expect(quiet.systemHealth == .unknown)
+  }
+
+  @Test("Monitoring status names quality without ever naming health")
+  func monitoringStatusNamesQuality() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let policy = ObservationPolicy(
+      budgetLimit: 1.0,
+      criticalMetrics: ["cpu"],
+      normalInterval: 1.0,
+      reducedInterval: 5.0,
+      highDetailInterval: 0.5,
+      overBudgetEvaluationsToDegrade: 2,
+      underBudgetEvaluationsToRecover: 2,
+      maximumHighDetailDuration: 60,
+      highDetailWarningBeforeEnd: 10
+    )
+    let pipeline = Pipeline(clock: clock, rules: [], observation: policy)
+    let batch = (0..<10).flatMap { index -> [Sample] in
+      let timestamp = start.addingTimeInterval(TimeInterval(index))
+      return [
+        Sample(timestamp: timestamp, availability: .available, value: 0.3, metric: "cpu"),
+        Sample(timestamp: timestamp, availability: .available, value: 0.5, metric: "memory"),
+      ]
+    }
+    let over = ResourceUsage(used: 2.0)
+    let normal = pipeline.evaluate(batch, usage: ResourceUsage(used: 0.5))
+    #expect(normal.observation?.mode == .normal)
+    _ = pipeline.evaluate(batch, usage: over)
+    let degraded = pipeline.evaluate(batch, usage: over)
+    let reduced = try #require(degraded.observation.map(makeMonitoringStatus))
+    #expect(reduced.headline == "Reduced monitoring")
+    #expect(reduced.detail?.contains("over resource budget") == true)
+    #expect(reduced.detail?.contains("memory") == true)
+    pipeline.requestHighDetail(duration: 60)
+    let close = pipeline.evaluate(batch)
+    let detailed = try #require(close.observation.map(makeMonitoringStatus))
+    #expect(detailed.headline == "High-detail investigation")
+    #expect(detailed.detail?.contains("60s limit") == true)
+    clock.advance(by: 55)
+    let warning = try #require(pipeline.evaluate(batch).observation.map(makeMonitoringStatus))
+    #expect(warning.detail?.contains("ending soon") == true)
+    for status in [reduced, detailed, warning] {
+      #expect(!status.headline.lowercased().contains("health"))
+      #expect(!(status.detail ?? "").lowercased().contains("health"))
+    }
+    #expect(makeDashboard(degraded).systemHealth == .unknown)
+    #expect(makeDashboard(close).systemHealth == .unknown)
+  }
+
+  @Test("Process rows separate aggregates and honor expand, collapse, and search")
+  func processRowsHonorExpandCollapseSearch() throws {
+    let timestamp = Date(timeIntervalSince1970: 0)
+    let alpha = Process(id: "a", parent: nil, name: "Alpha")
+    let beta = Process(id: "b", parent: "a", name: "Beta")
+    let gamma = Process(id: "c", parent: nil, name: "Gamma")
+    let samples = [
+      ProcessSample(timestamp: timestamp, process: alpha, metric: "cpu", value: 0.5),
+      ProcessSample(timestamp: timestamp, process: alpha, metric: "cpu", value: 0.5),
+      ProcessSample(timestamp: timestamp, process: beta, metric: "cpu", value: 0.25),
+      ProcessSample(timestamp: timestamp, process: beta, metric: "cpu", value: 0.25),
+      ProcessSample(timestamp: timestamp, process: gamma, metric: "cpu", value: 0.1),
+    ]
+    let collapsed = processRows(samples)
+    #expect(collapsed.map(\.process.id) == ["a", "c"])
+    let alphaRow = try #require(collapsed.first)
+    #expect(alphaRow.individualTotal == 1.0)
+    #expect(alphaRow.subtreeTotal == 1.5)
+    #expect(alphaRow.hasChildren)
+    #expect(!alphaRow.isExpanded)
+    #expect(alphaRow.depth == 0)
+    let expanded = processRows(samples, expanded: ["a"])
+    #expect(expanded.map(\.process.id) == ["a", "b", "c"])
+    let betaRow = try #require(expanded.first { $0.process.id == "b" })
+    #expect(betaRow.depth == 1)
+    #expect(betaRow.individualTotal == 0.5)
+    #expect(betaRow.subtreeTotal == 0.5)
+    #expect(betaRow.isExpanded == false)
+    let searched = processRows(samples, query: "bet")
+    #expect(searched.map(\.process.id) == ["a", "b"])
+    #expect(searched.first?.matchesQuery == false)
+    #expect(searched.last?.matchesQuery == true)
+    #expect(processRows(samples, query: "zzz").isEmpty)
+  }
+
+  @Test("Timeline points share one axis with tooltips that never zero-fill")
+  func timelinePointsShareOneAxis() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let policy = ObservationPolicy(
+      budgetLimit: 1.0,
+      criticalMetrics: ["cpu"],
+      normalInterval: 1.0,
+      reducedInterval: 5.0,
+      highDetailInterval: 0.5,
+      overBudgetEvaluationsToDegrade: 2,
+      underBudgetEvaluationsToRecover: 2,
+      maximumHighDetailDuration: 60,
+      highDetailWarningBeforeEnd: 10
+    )
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule], observation: policy)
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let memory = (0..<22).map { index in
+      let missing = index == 8
+      return Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: missing ? .unavailable : .available,
+        value: missing ? nil : 0.5,
+        metric: "memory"
+      )
+    }
+    let over = ResourceUsage(used: 2.0)
+    _ = pipeline.evaluate(cpu + memory, usage: over)
+    clock.advance(by: 10)
+    let evaluation = pipeline.evaluate(cpu + memory, usage: over)
+    let timeline = try #require(evaluation.timelines.first)
+    let points = makeTimelinePoints(timeline)
+    #expect(points.count == 11)
+    #expect(points.map(\.timestamp) == points.map(\.timestamp).sorted())
+    let gapPoint = try #require(points.first { $0.timestamp == start.addingTimeInterval(8) })
+    #expect(gapPoint.valuesByMetric == ["cpu": 0.95])
+    #expect(gapPoint.hasUnavailableData)
+    #expect(gapPoint.tooltip == "cpu 0.95 · data unavailable")
+    let startPoint = try #require(points.first { $0.timestamp == start.addingTimeInterval(5) })
+    #expect(startPoint.markerKinds == [.started])
+    #expect(startPoint.tooltip.contains("incident started"))
+    let transitionPoint = try #require(points.first { $0.timestamp == start.addingTimeInterval(10) })
+    #expect(transitionPoint.valuesByMetric == ["cpu": 0.95, "memory": 0.5])
+    #expect(transitionPoint.observationNotes == ["over resource budget"])
+    #expect(transitionPoint.tooltip == "cpu 0.95 · memory 0.5 · over resource budget")
+  }
+
+  @Test("Cyclic process parents terminate in tree rows")
+  func cyclicProcessParentsTerminateInRows() {
+    let timestamp = Date(timeIntervalSince1970: 0)
+    let first = Process(id: "x", parent: "y", name: "Ex")
+    let second = Process(id: "y", parent: "x", name: "Why")
+    let samples = [
+      ProcessSample(timestamp: timestamp, process: first, metric: "cpu", value: 0.5),
+      ProcessSample(timestamp: timestamp, process: second, metric: "cpu", value: 0.5),
+    ]
+    #expect(processRows(samples).isEmpty)
+  }
+
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in
       let critical = criticalRanges.contains { $0.contains(index) }
       return Sample(
