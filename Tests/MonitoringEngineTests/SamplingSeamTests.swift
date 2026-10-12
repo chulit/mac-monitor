@@ -165,7 +165,7 @@ struct SamplingSeamTests {
     let stream = SyntheticStream.scenario(.normal, startingAt: start, spacing: 1.0)
     let evaluation = pipeline.evaluate(stream.samples)
     #expect(evaluation.incidents.isEmpty)
-    let baseline = try #require(pipeline.baseline)
+    let baseline = try #require(pipeline.baseline(for: "cpu"))
     #expect(baseline.status == .limited)
     #expect(baseline.qualifyingSamples == 10)
     #expect(baseline.mean == 0.3)
@@ -207,7 +207,7 @@ struct SamplingSeamTests {
     )
     let evaluation = pipeline.evaluate(storm.samples)
     #expect(evaluation.incidents.count == 1)
-    let baseline = try #require(pipeline.baseline)
+    let baseline = try #require(pipeline.baseline(for: "cpu"))
     #expect(baseline.qualifyingSamples == 22)
     #expect(baseline.mean == 0.3)
   }
@@ -259,7 +259,7 @@ struct SamplingSeamTests {
     let incident = try #require(evaluation.incidents.first)
     #expect(incident.startedAt == shiftStart)
     #expect(incident.recoveredAt == shiftStart.addingTimeInterval(10))
-    let baseline = try #require(pipeline.baseline)
+    let baseline = try #require(pipeline.baseline(for: "cpu"))
     #expect(baseline.qualifyingSamples == 30)
     #expect(baseline.mean < 0.35)
   }
@@ -288,7 +288,7 @@ struct SamplingSeamTests {
     let stream = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0)
     let evaluation = pipeline.evaluate(stream.samples)
     #expect(evaluation.incidents.count == 1)
-    let baseline = try #require(pipeline.baseline)
+    let baseline = try #require(pipeline.baseline(for: "cpu"))
     #expect(baseline.status == .limited)
     #expect(baseline.mean == 0.3)
   }
@@ -310,11 +310,11 @@ struct SamplingSeamTests {
     let pipeline = Pipeline(clock: clock, rules: [], baseline: config)
     let stream = SyntheticStream.scenario(.normal, startingAt: start, spacing: 1.0)
     _ = pipeline.evaluate(stream.samples)
-    let fresh = try #require(pipeline.baseline)
+    let fresh = try #require(pipeline.baseline(for: "cpu"))
     #expect(fresh.status == .limited)
     clock.advance(by: 3600)
     _ = pipeline.evaluate([])
-    let stale = try #require(pipeline.baseline)
+    let stale = try #require(pipeline.baseline(for: "cpu"))
     #expect(stale.status == .stale)
     #expect(stale.qualifyingSamples == 10)
   }
@@ -342,9 +342,241 @@ struct SamplingSeamTests {
       spacing: 1.0
     )
     _ = pipeline.evaluate(second.samples)
-    let baseline = try #require(pipeline.baseline)
+    let baseline = try #require(pipeline.baseline(for: "cpu"))
     #expect(baseline.status == .stable)
     #expect(baseline.qualifyingSamples == 20)
+  }
+
+  @Test("Baselines learn each metric separately")
+  func baselinesLearnPerMetric() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let config = BaselineConfig(
+      promotionSamples: 5,
+      maturitySamples: 20,
+      deviationThreshold: 3,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30,
+      stalenessWindow: 600,
+      algorithmVersion: "1"
+    )
+    let pipeline = Pipeline(clock: clock, rules: [], baseline: config)
+    let cpu = (0..<10).map { index in
+      Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: 0.3,
+        metric: "cpu"
+      )
+    }
+    let memory = (0..<10).map { index in
+      Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: 0.5,
+        metric: "memory"
+      )
+    }
+    let evaluation = pipeline.evaluate(cpu + memory)
+    #expect(evaluation.incidents.isEmpty)
+    let cpuBaseline = try #require(pipeline.baseline(for: "cpu"))
+    #expect(cpuBaseline.qualifyingSamples == 10)
+    #expect(cpuBaseline.mean == 0.3)
+    #expect(cpuBaseline.status == .limited)
+    let memoryBaseline = try #require(pipeline.baseline(for: "memory"))
+    #expect(memoryBaseline.qualifyingSamples == 10)
+    #expect(memoryBaseline.mean == 0.5)
+  }
+
+  @Test("Each incident carries a synchronized timeline with provenance")
+  func incidentCarriesTimeline() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let memory = (0..<22).map { index in
+      let missing = index == 8 || index == 9
+      return Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: missing ? .unavailable : .available,
+        value: missing ? nil : 0.5,
+        metric: "memory"
+      )
+    }
+    let evaluation = pipeline.evaluate(cpu + memory)
+    #expect(evaluation.incidents.count == 1)
+    #expect(evaluation.timelines.count == 1)
+    let incident = try #require(evaluation.incidents.first)
+    let timeline = try #require(evaluation.timelines.first)
+    #expect(timeline.incident == incident)
+    let end = try #require(incident.recoveredAt)
+    #expect(Set(timeline.metricSamples.map(\.metric)) == ["cpu", "memory"])
+    #expect(timeline.metricSamples.count == 20)
+    #expect(
+      timeline.metricSamples.allSatisfy {
+        $0.timestamp >= incident.startedAt && $0.timestamp <= end
+      }
+    )
+    #expect(
+      timeline.gaps.map(\.timestamp)
+        == [start.addingTimeInterval(8), start.addingTimeInterval(9)]
+    )
+    #expect(
+      timeline.markers
+        == [
+          TimelineMarker(timestamp: start.addingTimeInterval(5), kind: .started),
+          TimelineMarker(timestamp: start.addingTimeInterval(9), kind: .peak),
+          TimelineMarker(timestamp: start.addingTimeInterval(15), kind: .recovered),
+        ]
+    )
+    #expect(timeline.ruleVersion == "1")
+    #expect(timeline.baselineVersion == nil)
+  }
+
+  @Test("Baseline-raised incidents carry the baseline version")
+  func baselineIncidentCarriesBaselineVersion() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let config = BaselineConfig(
+      promotionSamples: 5,
+      maturitySamples: 100,
+      deviationThreshold: 3,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30,
+      stalenessWindow: 600,
+      algorithmVersion: "1"
+    )
+    let pipeline = Pipeline(clock: clock, rules: [], baseline: config)
+    let base: [Double] = [
+      0.28, 0.31, 0.30, 0.29, 0.32, 0.30, 0.27, 0.31, 0.30, 0.29,
+      0.30, 0.32, 0.28, 0.30, 0.31, 0.29, 0.30, 0.30, 0.28, 0.31,
+    ]
+    let calm = base.enumerated().map { index, value in
+      Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: value
+      )
+    }
+    _ = pipeline.evaluate(calm)
+    let shiftStart = start.addingTimeInterval(100)
+    let shifted = (0..<10).map { index in
+      Sample(
+        timestamp: shiftStart.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: 0.9
+      )
+    }
+    let backToNormal = (10..<20).map { index in
+      Sample(
+        timestamp: shiftStart.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: 0.3
+      )
+    }
+    let evaluation = pipeline.evaluate(shifted + backToNormal)
+    #expect(evaluation.timelines.count == 1)
+    let timeline = try #require(evaluation.timelines.first)
+    #expect(timeline.ruleVersion == nil)
+    #expect(timeline.baselineVersion == "1")
+  }
+
+  @Test("Incident timelines rank relevant processes with stated reasons")
+  func timelinesRankRelevantProcesses() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let alpha = Process(id: "a", parent: nil, name: "Alpha")
+    let beta = Process(id: "b", parent: "d", name: "Beta")
+    let gamma = Process(id: "c", parent: nil, name: "Gamma")
+    let delta = Process(id: "d", parent: nil, name: "Delta")
+    var activity: [ProcessSample] = []
+    for index in 0..<5 {
+      activity.append(
+        ProcessSample(
+          timestamp: start.addingTimeInterval(TimeInterval(index)),
+          process: alpha,
+          metric: "cpu",
+          value: 0.9
+        )
+      )
+      activity.append(
+        ProcessSample(
+          timestamp: start.addingTimeInterval(TimeInterval(index)),
+          process: delta,
+          metric: "cpu",
+          value: 0.1
+        )
+      )
+    }
+    for index in 5..<16 {
+      let timestamp = start.addingTimeInterval(TimeInterval(index))
+      activity.append(ProcessSample(timestamp: timestamp, process: alpha, metric: "cpu", value: 0.5))
+      activity.append(ProcessSample(timestamp: timestamp, process: beta, metric: "cpu", value: 0.25))
+      activity.append(ProcessSample(timestamp: timestamp, process: gamma, metric: "cpu", value: 0.0))
+    }
+    let evaluation = pipeline.evaluate(cpu, processes: activity)
+    #expect(evaluation.incidents.count == 1)
+    let timeline = try #require(evaluation.timelines.first)
+    #expect(timeline.relevantProcesses.count == 3)
+    let first = try #require(timeline.relevantProcesses.first)
+    #expect(first.process.id == "a")
+    #expect(abs(first.contribution - 0.6667) < 0.001)
+    #expect(first.reasons == ["largest resource share during incident"])
+    let second = timeline.relevantProcesses[1]
+    #expect(second.process.id == "b")
+    #expect(abs(second.contribution - 0.3333) < 0.001)
+    #expect(second.reasons == ["elevated resource share during incident"])
+    let third = timeline.relevantProcesses[2]
+    #expect(third.process.id == "d")
+    #expect(third.contribution == 0)
+    #expect(third.reasons == ["ancestor of elevated process Beta"])
+    #expect(
+      timeline.relevantProcesses.allSatisfy { relevance in
+        relevance.reasons.allSatisfy { !$0.lowercased().contains("caus") }
+      }
+    )
+  }
+
+  @Test("Cyclic parent links terminate instead of hanging")
+  func cyclicParentsTerminate() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let first = Process(id: "x", parent: "y", name: "Ex")
+    let second = Process(id: "y", parent: "x", name: "Why")
+    let activity = (5..<16).map { index in
+      let timestamp = start.addingTimeInterval(TimeInterval(index))
+      return [
+        ProcessSample(timestamp: timestamp, process: first, metric: "cpu", value: 0.5),
+        ProcessSample(timestamp: timestamp, process: second, metric: "cpu", value: 0.5),
+      ]
+    }.flatMap { $0 }
+    let evaluation = pipeline.evaluate(cpu, processes: activity)
+    let timeline = try #require(evaluation.timelines.first)
+    #expect(timeline.relevantProcesses.count == 2)
   }
 
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in

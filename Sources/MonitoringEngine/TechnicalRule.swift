@@ -5,16 +5,19 @@ public struct TechnicalRule: Sendable, Equatable {
   public let triggerDuration: TimeInterval
   public let recoveryDuration: TimeInterval
   public let cooldown: TimeInterval
+  public let version: String
 
   public init(
     threshold: Double,
     triggerDuration: TimeInterval,
     recoveryDuration: TimeInterval,
-    cooldown: TimeInterval
+    cooldown: TimeInterval,
+    version: String = "1"
   ) {
     self.threshold = threshold
     self.triggerDuration = triggerDuration
     self.recoveryDuration = recoveryDuration
     self.cooldown = cooldown
+    self.version = version
   }
 }

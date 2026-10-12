@@ -65,6 +65,10 @@ public struct Baseline: Sendable {
     activeSince != nil
   }
 
+  public var algorithmVersion: String {
+    config.algorithmVersion
+  }
+
   private let config: BaselineConfig
   private var runningMean = 0.0
   private var m2 = 0.0
