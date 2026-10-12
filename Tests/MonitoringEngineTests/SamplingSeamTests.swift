@@ -1450,6 +1450,89 @@ struct SamplingSeamTests {
     #expect(processRows(samples).isEmpty)
   }
 
+  @Test("Termination requires confirmation and verifies identity")
+  func terminationRequiresConfirmation() throws {
+    let fake = FakeExecutor(tokens: [123: "token-1"])
+    let control = ProcessControl(executor: fake)
+    let target = ControlledProcess(pid: 123, identityToken: "token-1", name: "Helper")
+    #expect(control.terminate(target, confirmations: 0) == .confirmationRequired(count: 1))
+    #expect(fake.terminations.isEmpty)
+    #expect(control.terminate(target, confirmations: 1) == .exited)
+    #expect(fake.terminations.count == 1)
+    #expect(fake.terminations.first?.pid == 123)
+    #expect(fake.terminations.first?.forcefully == false)
+    let stale = ControlledProcess(pid: 123, identityToken: "token-0", name: "Helper")
+    #expect(control.terminate(stale, confirmations: 1) == .identityChanged)
+    #expect(fake.terminations.count == 1)
+  }
+
+  final class FakeExecutor: ProcessExecutor {
+    var tokens: [Int: String]
+    var terminations: [(pid: Int, forcefully: Bool)] = []
+    var failures: [Int: ProcessExecutorError] = [:]
+
+    init(tokens: [Int: String] = [:]) {
+      self.tokens = tokens
+    }
+
+    func identityToken(for pid: Int) -> String? {
+      tokens[pid]
+    }
+
+    func terminate(pid: Int, forcefully: Bool) throws {
+      terminations.append((pid: pid, forcefully: forcefully))
+      if let failure = failures[pid] {
+        throw failure
+      }
+    }
+  }
+
+  @Test("Force quit needs two confirmations and refuses reused identities")
+  func forceQuitNeedsTwoConfirmations() {
+    let fake = FakeExecutor(tokens: [123: "token-1"])
+    let control = ProcessControl(executor: fake)
+    let target = ControlledProcess(pid: 123, identityToken: "token-1", name: "Helper")
+    #expect(control.forceQuit(target, confirmations: 0) == .confirmationRequired(count: 2))
+    #expect(control.forceQuit(target, confirmations: 1) == .confirmationRequired(count: 2))
+    #expect(fake.terminations.isEmpty)
+    #expect(control.forceQuit(target, confirmations: 2) == .exited)
+    #expect(fake.terminations.count == 1)
+    #expect(fake.terminations.first?.forcefully == true)
+    fake.tokens[123] = "token-2"
+    #expect(control.forceQuit(target, confirmations: 2) == .identityChanged)
+    #expect(fake.terminations.count == 1)
+  }
+
+  @Test("Control failures explain themselves accurately")
+  func controlFailuresExplainThemselves() {
+    let fake = FakeExecutor(tokens: [1: "t1", 2: "t2"])
+    fake.failures = [1: .permissionDenied, 2: .systemProtected]
+    let control = ProcessControl(executor: fake)
+    let denied = control.terminate(ControlledProcess(pid: 1, identityToken: "t1", name: "A"), confirmations: 1)
+    #expect(denied == .refused(.permissionDenied))
+    if case .refused(let refusal) = denied {
+      #expect(refusal.explanation == "Termination was refused: the request lacks permission for this process.")
+    } else {
+      Issue.record("expected refusal")
+    }
+    let blocked = control.terminate(ControlledProcess(pid: 2, identityToken: "t2", name: "B"), confirmations: 1)
+    #expect(blocked == .refused(.systemProtected))
+    if case .refused(let refusal) = blocked {
+      #expect(refusal.explanation == "Termination was refused: the process is protected by the system.")
+    } else {
+      Issue.record("expected refusal")
+    }
+    let gone = control.terminate(ControlledProcess(pid: 99, identityToken: "t9", name: "C"), confirmations: 1)
+    #expect(gone == .refused(.alreadyExited))
+    if case .refused(let refusal) = gone {
+      #expect(refusal.explanation == "No action taken: the process had already exited.")
+    } else {
+      Issue.record("expected refusal")
+    }
+    let reused = control.terminate(ControlledProcess(pid: 1, identityToken: "stale", name: "A"), confirmations: 1)
+    #expect(reused == .identityChanged)
+  }
+
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in
       let critical = criticalRanges.contains { $0.contains(index) }
       return Sample(
