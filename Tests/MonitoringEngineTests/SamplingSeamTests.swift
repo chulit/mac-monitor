@@ -579,6 +579,224 @@ struct SamplingSeamTests {
     #expect(timeline.relevantProcesses.count == 2)
   }
 
+  @Test("Budget pressure degrades noncritical metrics while preserving critical sampling")
+  func budgetPressureDegradesNoncriticalFirst() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let policy = ObservationPolicy(
+      budgetLimit: 1.0,
+      criticalMetrics: ["cpu"],
+      normalInterval: 1.0,
+      reducedInterval: 5.0,
+      highDetailInterval: 0.5,
+      overBudgetEvaluationsToDegrade: 2,
+      underBudgetEvaluationsToRecover: 2,
+      maximumHighDetailDuration: 60,
+      highDetailWarningBeforeEnd: 10
+    )
+    let pipeline = Pipeline(clock: clock, rules: [], observation: policy)
+    let batch = (0..<10).flatMap { index -> [Sample] in
+      let timestamp = start.addingTimeInterval(TimeInterval(index))
+      return [
+        Sample(timestamp: timestamp, availability: .available, value: 0.3, metric: "cpu"),
+        Sample(timestamp: timestamp, availability: .available, value: 0.5, metric: "memory"),
+      ]
+    }
+    let steady = pipeline.evaluate(batch, usage: ResourceUsage(used: 2.0))
+    #expect(steady.observation?.mode == .normal)
+    #expect(steady.observationTransitions.isEmpty)
+    let degraded = pipeline.evaluate(batch, usage: ResourceUsage(used: 2.0))
+    #expect(
+      degraded.observation?.mode
+        == .reduced(reason: "over resource budget", affectedMetrics: ["memory"])
+    )
+    #expect(degraded.observation?.intervalsByMetric == ["cpu": 1.0, "memory": 5.0])
+    #expect(degraded.observation?.observedIntervals == [1.0])
+    #expect(degraded.observationTransitions.count == 1)
+    let transition = try #require(degraded.observationTransitions.first)
+    #expect(transition.from == .normal)
+    #expect(transition.to == .reduced)
+    #expect(transition.reason == "over resource budget")
+    #expect(transition.affectedMetrics == ["memory"])
+  }
+
+  @Test("Hysteresis prevents flapping and recovers quality gradually")
+  func hysteresisPreventsFlapping() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let policy = ObservationPolicy(
+      budgetLimit: 1.0,
+      criticalMetrics: ["cpu"],
+      normalInterval: 1.0,
+      reducedInterval: 5.0,
+      highDetailInterval: 0.5,
+      overBudgetEvaluationsToDegrade: 2,
+      underBudgetEvaluationsToRecover: 2,
+      maximumHighDetailDuration: 60,
+      highDetailWarningBeforeEnd: 10
+    )
+    let pipeline = Pipeline(clock: clock, rules: [], observation: policy)
+    let batch = (0..<10).flatMap { index -> [Sample] in
+      let timestamp = start.addingTimeInterval(TimeInterval(index))
+      return [
+        Sample(timestamp: timestamp, availability: .available, value: 0.3, metric: "cpu"),
+        Sample(timestamp: timestamp, availability: .available, value: 0.5, metric: "memory"),
+      ]
+    }
+    let over = ResourceUsage(used: 2.0)
+    let under = ResourceUsage(used: 0.5)
+    #expect(pipeline.evaluate(batch, usage: over).observation?.mode == .normal)
+    #expect(pipeline.evaluate(batch, usage: under).observation?.mode == .normal)
+    #expect(pipeline.evaluate(batch, usage: over).observation?.mode == .normal)
+    #expect(pipeline.evaluate(batch, usage: over).observation?.mode != .normal)
+    #expect(pipeline.evaluate(batch, usage: under).observation?.mode != .normal)
+    let recovered = pipeline.evaluate(batch, usage: under)
+    #expect(recovered.observation?.mode == .normal)
+    #expect(recovered.observationTransitions.count == 1)
+    let transition = try #require(recovered.observationTransitions.first)
+    #expect(transition.from == .reduced)
+    #expect(transition.to == .normal)
+    #expect(transition.reason == "within resource budget")
+  }
+
+  @Test("Reduced monitoring shows its reason on the incident timeline")
+  func reducedIndicatorOnTimeline() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let policy = ObservationPolicy(
+      budgetLimit: 1.0,
+      criticalMetrics: ["cpu"],
+      normalInterval: 1.0,
+      reducedInterval: 5.0,
+      highDetailInterval: 0.5,
+      overBudgetEvaluationsToDegrade: 2,
+      underBudgetEvaluationsToRecover: 2,
+      maximumHighDetailDuration: 60,
+      highDetailWarningBeforeEnd: 10
+    )
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule], observation: policy)
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let memory = (0..<22).map { index in
+      Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: 0.5,
+        metric: "memory"
+      )
+    }
+    let over = ResourceUsage(used: 2.0)
+    let first = pipeline.evaluate(cpu + memory, usage: over)
+    #expect(first.observation?.mode == .normal)
+    clock.advance(by: 10)
+    let second = pipeline.evaluate(cpu + memory, usage: over)
+    #expect(
+      second.observation?.mode
+        == .reduced(reason: "over resource budget", affectedMetrics: ["memory"])
+    )
+    let timeline = try #require(second.timelines.first)
+    #expect(timeline.observationTransitions.count == 1)
+    let transition = try #require(timeline.observationTransitions.first)
+    #expect(transition.timestamp == start.addingTimeInterval(10))
+    #expect(transition.reason == "over resource budget")
+    #expect(transition.affectedMetrics == ["memory"])
+  }
+
+  @Test("High-detail sessions show limits, warn, end automatically, and never extend silently")
+  func highDetailSessionLifecycle() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let policy = ObservationPolicy(
+      budgetLimit: 1.0,
+      criticalMetrics: ["cpu"],
+      normalInterval: 1.0,
+      reducedInterval: 5.0,
+      highDetailInterval: 0.5,
+      overBudgetEvaluationsToDegrade: 2,
+      underBudgetEvaluationsToRecover: 2,
+      maximumHighDetailDuration: 60,
+      highDetailWarningBeforeEnd: 10
+    )
+    let pipeline = Pipeline(clock: clock, rules: [], observation: policy)
+    let batch = (0..<10).flatMap { index -> [Sample] in
+      let timestamp = start.addingTimeInterval(TimeInterval(index))
+      return [
+        Sample(timestamp: timestamp, availability: .available, value: 0.3, metric: "cpu"),
+        Sample(timestamp: timestamp, availability: .available, value: 0.5, metric: "memory"),
+      ]
+    }
+    pipeline.requestHighDetail(duration: 120)
+    let started = pipeline.evaluate(batch)
+    #expect(started.observation?.mode == .highDetail(remaining: 60, limit: 60, warning: false))
+    #expect(started.observation?.intervalsByMetric == ["cpu": 0.5, "memory": 0.5])
+    #expect(started.observationTransitions.count == 1)
+    let startTransition = try #require(started.observationTransitions.first)
+    #expect(startTransition.from == .normal)
+    #expect(startTransition.to == .highDetail)
+    #expect(startTransition.reason == "high-detail session started")
+    clock.advance(by: 10)
+    pipeline.requestHighDetail(duration: 120)
+    clock.advance(by: 45)
+    let warning = pipeline.evaluate(batch)
+    #expect(warning.observation?.mode == .highDetail(remaining: 5, limit: 60, warning: true))
+    #expect(warning.observationTransitions.count == 1)
+    let warningTransition = try #require(warning.observationTransitions.first)
+    #expect(warningTransition.reason == "high-detail session ending soon")
+    clock.advance(by: 10)
+    let ended = pipeline.evaluate(batch)
+    #expect(ended.observation?.mode == .normal)
+    #expect(ended.observationTransitions.count == 1)
+    let endTransition = try #require(ended.observationTransitions.first)
+    #expect(endTransition.from == .highDetail)
+    #expect(endTransition.to == .normal)
+    #expect(endTransition.reason == "high-detail session ended")
+  }
+
+  @Test("High-detail sessions take precedence over budget pressure")
+  func highDetailPrecedenceOverBudget() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let policy = ObservationPolicy(
+      budgetLimit: 1.0,
+      criticalMetrics: ["cpu"],
+      normalInterval: 1.0,
+      reducedInterval: 5.0,
+      highDetailInterval: 0.5,
+      overBudgetEvaluationsToDegrade: 2,
+      underBudgetEvaluationsToRecover: 2,
+      maximumHighDetailDuration: 60,
+      highDetailWarningBeforeEnd: 10
+    )
+    let pipeline = Pipeline(clock: clock, rules: [], observation: policy)
+    let batch = (0..<10).flatMap { index -> [Sample] in
+      let timestamp = start.addingTimeInterval(TimeInterval(index))
+      return [
+        Sample(timestamp: timestamp, availability: .available, value: 0.3, metric: "cpu"),
+        Sample(timestamp: timestamp, availability: .available, value: 0.5, metric: "memory"),
+      ]
+    }
+    let over = ResourceUsage(used: 2.0)
+    pipeline.requestHighDetail(duration: 60)
+    _ = pipeline.evaluate(batch)
+    let held = pipeline.evaluate(batch, usage: over)
+    #expect(held.observation?.mode == .highDetail(remaining: 60, limit: 60, warning: false))
+    #expect(held.observationTransitions.isEmpty)
+    clock.advance(by: 60)
+    let expired = pipeline.evaluate(batch, usage: over)
+    #expect(expired.observation?.mode == .normal)
+    #expect(expired.observationTransitions.count == 1)
+    let degraded = pipeline.evaluate(batch, usage: over)
+    #expect(
+      degraded.observation?.mode
+        == .reduced(reason: "over resource budget", affectedMetrics: ["memory"])
+    )
+  }
+
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in
       let critical = criticalRanges.contains { $0.contains(index) }
       return Sample(

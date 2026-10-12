@@ -24,6 +24,7 @@ public struct IncidentTimeline: Sendable, Equatable {
   public let ruleVersion: String?
   public let baselineVersion: String?
   public let relevantProcesses: [ProcessRelevance]
+  public let observationTransitions: [ObservationTransition]
 
   public init(
     incident: Incident,
@@ -32,7 +33,8 @@ public struct IncidentTimeline: Sendable, Equatable {
     markers: [TimelineMarker],
     ruleVersion: String?,
     baselineVersion: String?,
-    relevantProcesses: [ProcessRelevance]
+    relevantProcesses: [ProcessRelevance],
+    observationTransitions: [ObservationTransition] = []
   ) {
     self.incident = incident
     self.metricSamples = metricSamples
@@ -41,5 +43,6 @@ public struct IncidentTimeline: Sendable, Equatable {
     self.ruleVersion = ruleVersion
     self.baselineVersion = baselineVersion
     self.relevantProcesses = relevantProcesses
+    self.observationTransitions = observationTransitions
   }
 }
