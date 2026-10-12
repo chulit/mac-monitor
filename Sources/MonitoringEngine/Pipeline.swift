@@ -30,20 +30,29 @@ public struct Evaluation: Sendable, Equatable {
   }
 }
 
-public struct Pipeline<C: Clock & Sendable>: Sendable {
+public final class Pipeline<C: Clock> {
   private let clock: C
   private let rules: [TechnicalRule]
+  public private(set) var baseline: Baseline?
 
-  public init(clock: C, rules: [TechnicalRule] = []) {
+  public init(clock: C, rules: [TechnicalRule] = [], baseline config: BaselineConfig? = nil) {
     self.clock = clock
     self.rules = rules
+    self.baseline = config.map(Baseline.init(config:))
   }
 
   public func evaluate(_ samples: [Sample]) -> Evaluation {
     let gaps = samples
       .filter { $0.availability == .unavailable }
       .map { Gap(timestamp: $0.timestamp) }
-    let incidents = rules.flatMap { incidents(matching: $0, in: samples) }
+    let ruleIncidents = rules.flatMap { incidents(matching: $0, in: samples) }
+    var deviationIncidents: [Incident] = []
+    if let baseline {
+      let transformed = baseline.deviationStream(for: samples, excluding: ruleIncidents)
+      deviationIncidents = incidents(matching: baseline.detectionRule, in: transformed)
+    }
+    let incidents = ruleIncidents + deviationIncidents
+    baseline?.learn(samples, excluding: incidents, now: clock.now())
     return Evaluation(incidents: incidents, gaps: gaps)
   }
 
