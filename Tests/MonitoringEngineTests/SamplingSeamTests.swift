@@ -797,6 +797,195 @@ struct SamplingSeamTests {
     )
   }
 
+  @Test("Aging detail compacts into summaries preserving required statistics")
+  func agingDetailCompactsToSummaries() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let policy = RetentionPolicy(
+      detailRetention: 100,
+      quota: 10_000,
+      thresholdsByMetric: ["cpu": 0.5]
+    )
+    let pipeline = Pipeline(clock: clock, rules: [], retention: policy)
+    let batch = (0..<10).map { index in
+      Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: index.isMultiple(of: 2) ? 0.25 : 0.75,
+        metric: "cpu"
+      )
+    }
+    _ = pipeline.evaluate(batch)
+    clock.advance(by: 200)
+    _ = pipeline.evaluate([])
+    let history = try #require(pipeline.history)
+    #expect(history.details.isEmpty)
+    #expect(history.storageUnits == 0)
+    #expect(history.summaries.count == 1)
+    let summary = try #require(history.summaries.first)
+    #expect(summary.metric == "cpu")
+    #expect(summary.start == start)
+    #expect(summary.end == start.addingTimeInterval(9))
+    #expect(summary.count == 10)
+    #expect(summary.min == 0.25)
+    #expect(summary.max == 0.75)
+    #expect(summary.average == 0.5)
+    #expect(summary.variation == 0.25)
+    #expect(summary.thresholdExceededDuration == 4.0)
+    #expect(summary.incidentCount == 0)
+  }
+
+  @Test("Quota pressure summarizes oldest detail first while preserving metadata")
+  func quotaPressureSummarizesOldestFirst() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let policy = RetentionPolicy(
+      detailRetention: 10_000,
+      quota: 6,
+      thresholdsByMetric: ["cpu": 0.5]
+    )
+    let pipeline = Pipeline(clock: clock, rules: [], retention: policy)
+    let first = (0..<10).map { index in
+      Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: 0.3,
+        metric: "cpu"
+      )
+    }
+    _ = pipeline.evaluate(first)
+    let afterFirst = try #require(pipeline.history)
+    #expect(afterFirst.details.count == 6)
+    #expect(afterFirst.storageUnits == 6)
+    #expect(afterFirst.summaries.count == 1)
+    let oldest = try #require(afterFirst.summaries.first)
+    #expect(oldest.start == start)
+    #expect(oldest.end == start.addingTimeInterval(3))
+    #expect(oldest.count == 4)
+    #expect(oldest.average == 0.3)
+    #expect(oldest.incidentCount == 0)
+    let second = (10..<15).map { index in
+      Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: 0.3,
+        metric: "cpu"
+      )
+    }
+    _ = pipeline.evaluate(second)
+    let afterSecond = try #require(pipeline.history)
+    #expect(afterSecond.details.count == 6)
+    #expect(afterSecond.details.first?.timestamp == start.addingTimeInterval(9))
+    #expect(afterSecond.summaries.count == 2)
+    let newest = afterSecond.summaries.last
+    #expect(newest?.start == start.addingTimeInterval(4))
+    #expect(newest?.end == start.addingTimeInterval(8))
+    #expect(newest?.count == 5)
+  }
+
+  @Test("Critical incident spans survive compaction")
+  func criticalIncidentSpansSurviveCompaction() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let policy = RetentionPolicy(
+      detailRetention: 100,
+      quota: 10_000,
+      thresholdsByMetric: ["cpu": 0.8, "memory": 0.8]
+    )
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule], retention: policy)
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let memory = (0..<22).map { index in
+      Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: 0.5,
+        metric: "memory"
+      )
+    }
+    let evaluation = pipeline.evaluate(cpu + memory)
+    #expect(evaluation.incidents.count == 1)
+    clock.advance(by: 200)
+    _ = pipeline.evaluate([])
+    let history = try #require(pipeline.history)
+    #expect(history.incidents.count == 1)
+    #expect(history.details.count == 20)
+    #expect(
+      Set(history.details.map(\.timestamp))
+        == Set((5..<15).map { start.addingTimeInterval(TimeInterval($0)) })
+    )
+    #expect(history.summaries.count == 4)
+  }
+
+  @Test("Pinned incident spans survive compaction")
+  func pinnedIncidentSpansSurviveCompaction() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let baselineConfig = BaselineConfig(
+      promotionSamples: 5,
+      maturitySamples: 100,
+      deviationThreshold: 3,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30,
+      stalenessWindow: 3600,
+      algorithmVersion: "1"
+    )
+    let retentionPolicy = RetentionPolicy(
+      detailRetention: 100,
+      quota: 10_000,
+      thresholdsByMetric: [:]
+    )
+    let pipeline = Pipeline(clock: clock, rules: [], baseline: baselineConfig, retention: retentionPolicy)
+    let base: [Double] = [
+      0.28, 0.31, 0.30, 0.29, 0.32, 0.30, 0.27, 0.31, 0.30, 0.29,
+      0.30, 0.32, 0.28, 0.30, 0.31, 0.29, 0.30, 0.30, 0.28, 0.31,
+    ]
+    let calm = base.enumerated().map { index, value in
+      Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: value
+      )
+    }
+    _ = pipeline.evaluate(calm)
+    let shiftStart = start.addingTimeInterval(100)
+    let shifted = (0..<10).map { index in
+      Sample(
+        timestamp: shiftStart.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: 0.9
+      )
+    }
+    let backToNormal = (10..<20).map { index in
+      Sample(
+        timestamp: shiftStart.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: 0.3
+      )
+    }
+    let evaluation = pipeline.evaluate(shifted + backToNormal)
+    #expect(evaluation.incidents.count == 1)
+    let incident = try #require(evaluation.incidents.first)
+    pipeline.pin(incident)
+    clock.advance(by: 300)
+    _ = pipeline.evaluate([])
+    let history = try #require(pipeline.history)
+    #expect(history.incidents.count == 1)
+    #expect(history.pinned.count == 1)
+    #expect(history.details.count == 10)
+    #expect(
+      history.details.allSatisfy {
+        $0.timestamp >= shiftStart && $0.timestamp < shiftStart.addingTimeInterval(10)
+      }
+    )
+  }
+
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in
       let critical = criticalRanges.contains { $0.contains(index) }
       return Sample(

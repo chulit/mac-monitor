@@ -54,24 +54,39 @@ public final class Pipeline<C: Clock> {
   private let rules: [TechnicalRule]
   private let baselineConfig: BaselineConfig?
   private let observationPolicy: ObservationPolicy?
+  private let retentionPolicy: RetentionPolicy?
   public private(set) var baselines: [String: Baseline] = [:]
   private var observationState: ObservationState?
   private var observationHistory: [ObservationTransition] = []
   private var pendingObservationTransitions: [ObservationTransition] = []
+  private var historyStore: HistoryStore?
 
   public init(
     clock: C,
     rules: [TechnicalRule] = [],
     baseline config: BaselineConfig? = nil,
-    observation policy: ObservationPolicy? = nil
+    observation policy: ObservationPolicy? = nil,
+    retention retentionPolicy: RetentionPolicy? = nil
   ) {
     self.clock = clock
     self.rules = rules
     self.baselineConfig = config
     self.observationPolicy = policy
+    self.retentionPolicy = retentionPolicy
     if policy != nil {
       self.observationState = ObservationState()
     }
+    if let retentionPolicy {
+      self.historyStore = HistoryStore(policy: retentionPolicy)
+    }
+  }
+
+  public var history: HistorySnapshot? {
+    historyStore?.snapshot()
+  }
+
+  public func pin(_ incident: Incident) {
+    historyStore?.pin(incident)
   }
 
   public func baseline(for metric: String) -> Baseline? {
@@ -133,6 +148,9 @@ public final class Pipeline<C: Clock> {
       }
     }
     let incidents = ruleIncidents + deviationIncidents
+    if retentionPolicy != nil {
+      historyStore?.record(samples: samples, incidents: incidents, now: clock.now())
+    }
     if let config = baselineConfig {
       for metric in metrics {
         var baseline = baselines[metric] ?? Baseline(config: config)
