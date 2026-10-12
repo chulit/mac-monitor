@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Process: Sendable, Equatable, Hashable {
+public struct Process: Sendable, Equatable, Hashable, Codable {
   public let id: String
   public let parent: String?
   public let name: String
@@ -26,7 +26,7 @@ public struct ProcessSample: Sendable, Equatable {
   }
 }
 
-public struct ProcessRelevance: Sendable, Equatable {
+public struct ProcessRelevance: Sendable, Equatable, Codable {
   public let process: Process
   public let contribution: Double
   public let reasons: [String]

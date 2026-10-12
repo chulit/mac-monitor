@@ -12,7 +12,7 @@ public struct RetentionPolicy: Sendable, Equatable {
   }
 }
 
-public struct SampleSummary: Sendable, Equatable {
+public struct SampleSummary: Sendable, Equatable, Codable {
   public let metric: String
   public let start: Date
   public let end: Date

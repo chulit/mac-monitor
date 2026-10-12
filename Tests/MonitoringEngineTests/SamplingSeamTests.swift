@@ -986,6 +986,292 @@ struct SamplingSeamTests {
     )
   }
 
+  @Test("Exported packages round-trip with integrity intact")
+  func exportedPackagesRoundTrip() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let evaluation = pipeline.evaluate(cpu)
+    let timeline = try #require(evaluation.timelines.first)
+    let summary = SampleSummary(
+      metric: "cpu",
+      start: start,
+      end: start.addingTimeInterval(21),
+      count: 22,
+      min: 0.3,
+      max: 0.99,
+      average: 0.4,
+      variation: 0.2,
+      thresholdExceededDuration: 10,
+      incidentCount: 1
+    )
+    let archive = IncidentArchive()
+    let package = try archive.export(
+      timeline,
+      summaries: [summary],
+      redactProcessNames: false,
+      now: start.addingTimeInterval(30)
+    )
+    #expect(package.schemaVersion == IncidentPackage.currentSchemaVersion)
+    #expect(package.manifest.sampleCount == timeline.metricSamples.count)
+    #expect(!package.checksum.isEmpty)
+    let data = try package.encoded()
+    let preview = try archive.preview(data)
+    #expect(preview.manifest.id == package.manifest.id)
+    #expect(preview.sampleCount == timeline.metricSamples.count)
+    let opened = try archive.open(data)
+    #expect(opened.package.incident == timeline.incident)
+    #expect(opened.package.metricSamples == timeline.metricSamples)
+    #expect(opened.package.gaps == timeline.gaps)
+    #expect(opened.package.markers == timeline.markers)
+    #expect(opened.package.relevantProcesses == timeline.relevantProcesses)
+    #expect(opened.package.observationTransitions == timeline.observationTransitions)
+    #expect(opened.package.summaries == [summary])
+    #expect(opened.package.ruleVersion == "1")
+    #expect(opened.migratedFrom == nil)
+    #expect(opened.reanalyses.isEmpty)
+  }
+
+  @Test("Export redacts sensitive process names when requested")
+  func exportRedactsProcessNames() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let alpha = Process(id: "a", parent: nil, name: "Alpha")
+    let beta = Process(id: "b", parent: "d", name: "Beta")
+    let delta = Process(id: "d", parent: nil, name: "Delta")
+    var activity: [ProcessSample] = []
+    for index in 5..<16 {
+      let timestamp = start.addingTimeInterval(TimeInterval(index))
+      activity.append(ProcessSample(timestamp: timestamp, process: alpha, metric: "cpu", value: 0.5))
+      activity.append(ProcessSample(timestamp: timestamp, process: beta, metric: "cpu", value: 0.25))
+    }
+    for index in 0..<5 {
+      activity.append(
+        ProcessSample(
+          timestamp: start.addingTimeInterval(TimeInterval(index)),
+          process: delta,
+          metric: "cpu",
+          value: 0.1
+        )
+      )
+    }
+    let evaluation = pipeline.evaluate(cpu, processes: activity)
+    let timeline = try #require(evaluation.timelines.first)
+    let archive = IncidentArchive()
+    let package = try archive.export(
+      timeline,
+      summaries: [],
+      redactProcessNames: true,
+      now: start.addingTimeInterval(30)
+    )
+    #expect(package.processNamesRedacted)
+    #expect(package.relevantProcesses.map(\.process.id) == ["a", "b", "d"])
+    #expect(package.relevantProcesses.allSatisfy { $0.process.name == "redacted" })
+    #expect(
+      package.relevantProcesses.allSatisfy { relevance in
+        relevance.reasons.allSatisfy { reason in
+          !reason.contains("Alpha") && !reason.contains("Beta") && !reason.contains("Delta")
+        }
+      }
+    )
+    let reopened = try archive.open(try package.encoded())
+    #expect(reopened.package.relevantProcesses == package.relevantProcesses)
+    let plain = try archive.export(
+      timeline,
+      summaries: [],
+      redactProcessNames: false,
+      now: start.addingTimeInterval(30)
+    )
+    #expect(!plain.processNamesRedacted)
+    #expect(plain.relevantProcesses.map(\.process.name).contains("Alpha"))
+  }
+
+  @Test("Import rejects tampered, future-versioned, and malformed packages")
+  func importRejectsInvalidPackages() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let evaluation = pipeline.evaluate(cpu)
+    let timeline = try #require(evaluation.timelines.first)
+    let archive = IncidentArchive()
+    let package = try archive.export(
+      timeline,
+      summaries: [],
+      redactProcessNames: false,
+      now: start.addingTimeInterval(30)
+    )
+    let data = try package.encoded()
+    let tampered = Data(
+      String(decoding: data, as: UTF8.self).replacingOccurrences(of: "0.99", with: "0.11").utf8
+    )
+    #expect(throws: ArchiveError.checksumMismatch) {
+      try archive.preview(tampered)
+    }
+    let future = Data(
+      String(decoding: data, as: UTF8.self)
+        .replacingOccurrences(of: "\"schemaVersion\":1", with: "\"schemaVersion\":99").utf8
+    )
+    #expect(throws: ArchiveError.unsupportedSchemaVersion(99)) {
+      try archive.preview(future)
+    }
+    #expect(throws: ArchiveError.malformed) {
+      try archive.preview(Data("not a package".utf8))
+    }
+    #expect(throws: ArchiveError.malformed) {
+      try archive.open(Data("not a package".utf8))
+    }
+  }
+
+  @Test("Opening the same package twice reports a duplicate")
+  func openingTwiceReportsDuplicate() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let evaluation = pipeline.evaluate(cpu)
+    let timeline = try #require(evaluation.timelines.first)
+    let archive = IncidentArchive()
+    let package = try archive.export(
+      timeline,
+      summaries: [],
+      redactProcessNames: false,
+      now: start.addingTimeInterval(30)
+    )
+    let data = try package.encoded()
+    let opened = try archive.open(data)
+    #expect(archive.stored.count == 1)
+    #expect(throws: ArchiveError.duplicate(opened.package.manifest.id)) {
+      try archive.open(data)
+    }
+    #expect(archive.stored.count == 1)
+  }
+
+  @Test("Archives stay isolated and label re-analysis separately from the original")
+  func archivesStayIsolated() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let retention = RetentionPolicy(detailRetention: 10_000, quota: 10_000, thresholdsByMetric: [:])
+    let pipeline = Pipeline(clock: clock, rules: [rule], retention: retention)
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let evaluation = pipeline.evaluate(cpu)
+    let timeline = try #require(evaluation.timelines.first)
+    let historyBefore = try #require(pipeline.history)
+    let archive = IncidentArchive()
+    let package = try archive.export(
+      timeline,
+      summaries: [],
+      redactProcessNames: false,
+      now: start.addingTimeInterval(30)
+    )
+    let opened = try archive.open(try package.encoded())
+    let fresh = Pipeline(clock: ControlledClock(startingAt: start), rules: [rule])
+    let reanalysis = fresh.evaluate(opened.package.metricSamples)
+    try archive.recordReanalysis(
+      packageID: opened.package.manifest.id,
+      incidents: reanalysis.incidents,
+      algorithmVersion: "2",
+      at: start.addingTimeInterval(100)
+    )
+    let stored = try #require(archive.archived(packageID: opened.package.manifest.id))
+    #expect(stored.package == package)
+    #expect(stored.reanalyses.count == 1)
+    let entry = try #require(stored.reanalyses.first)
+    #expect(entry.label == "re-analysis")
+    #expect(entry.algorithmVersion == "2")
+    #expect(entry.incidents == reanalysis.incidents)
+    #expect(pipeline.history == historyBefore)
+    #expect(throws: ArchiveError.unknownPackage("missing")) {
+      try archive.recordReanalysis(
+        packageID: "missing",
+        incidents: [],
+        algorithmVersion: "2",
+        at: start
+      )
+    }
+  }
+
+  @Test("Legacy packages migrate on an internal copy")
+  func legacyPackagesMigrate() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let evaluation = pipeline.evaluate(cpu)
+    let timeline = try #require(evaluation.timelines.first)
+    let legacyContent = LegacyPackageContent(
+      schemaVersion: 0,
+      manifest: PackageManifest(
+        id: UUID().uuidString,
+        exportedAt: start.addingTimeInterval(30),
+        schemaVersion: 0,
+        incidentStart: timeline.incident.startedAt,
+        incidentEnd: timeline.incident.recoveredAt,
+        sampleCount: timeline.metricSamples.count
+      ),
+      incident: timeline.incident,
+      metricSamples: timeline.metricSamples,
+      gaps: timeline.gaps,
+      markers: timeline.markers,
+      relevantProcesses: timeline.relevantProcesses,
+      summaries: [],
+      ruleVersion: timeline.ruleVersion,
+      baselineVersion: timeline.baselineVersion
+    )
+    let legacy = try LegacyPackage(content: legacyContent)
+    let data = try legacy.encoded()
+    let archive = IncidentArchive()
+    let preview = try archive.preview(data)
+    #expect(preview.migratedFrom == 0)
+    let opened = try archive.open(data)
+    #expect(opened.migratedFrom == 0)
+    #expect(opened.package.schemaVersion == IncidentPackage.currentSchemaVersion)
+    #expect(opened.package.observationTransitions.isEmpty)
+    #expect(!opened.package.processNamesRedacted)
+    #expect(opened.package.incident == timeline.incident)
+    #expect(opened.package.metricSamples == timeline.metricSamples)
+    #expect(try archive.preview(data).migratedFrom == 0)
+  }
+
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in
       let critical = criticalRanges.contains { $0.contains(index) }
       return Sample(

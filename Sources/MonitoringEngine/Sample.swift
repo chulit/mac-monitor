@@ -1,11 +1,11 @@
 import Foundation
 
-public enum Availability: Sendable, Equatable {
+public enum Availability: Sendable, Equatable, Codable {
   case available
   case unavailable
 }
 
-public struct Sample: Sendable, Equatable {
+public struct Sample: Sendable, Equatable, Codable {
   public let timestamp: Date
   public let availability: Availability
   public let value: Double?

@@ -1,7 +1,7 @@
 import Foundation
 
-public struct TimelineMarker: Sendable, Equatable {
-  public enum Kind: String, Sendable, Equatable {
+public struct TimelineMarker: Sendable, Equatable, Codable {
+  public enum Kind: String, Sendable, Equatable, Codable {
     case started
     case peak
     case recovered
@@ -16,7 +16,7 @@ public struct TimelineMarker: Sendable, Equatable {
   }
 }
 
-public struct IncidentTimeline: Sendable, Equatable {
+public struct IncidentTimeline: Sendable, Equatable, Codable {
   public let incident: Incident
   public let metricSamples: [Sample]
   public let gaps: [Gap]

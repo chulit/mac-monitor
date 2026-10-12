@@ -64,8 +64,8 @@ public struct Observation: Sendable, Equatable {
   }
 }
 
-public struct ObservationTransition: Sendable, Equatable {
-  public enum State: String, Sendable, Equatable {
+public struct ObservationTransition: Sendable, Equatable, Codable {
+  public enum State: String, Sendable, Equatable, Codable {
     case normal
     case reduced
     case highDetail
