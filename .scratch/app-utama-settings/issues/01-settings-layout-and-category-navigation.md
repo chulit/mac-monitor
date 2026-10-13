@@ -6,8 +6,8 @@
 
 **Status:** ready-for-agent
 
-- [ ] Header displaying "Settings" title and "Configure monitoring, alerts, data retention, and app preferences." subtitle
-- [ ] Left category navigation list with 7 items:
+- [x] Header displaying "Settings" title and "Configure monitoring, alerts, data retention, and app preferences." subtitle
+- [x] Left category navigation list with 7 items:
   - General (`gearshape.fill`)
   - Monitoring (`waveform.path.ecg`)
   - Alert & Notifications (`bell.fill`)
@@ -15,7 +15,7 @@
   - Appearance (`display`)
   - Privacy & Security (`lock.shield.fill`)
   - About (`info.circle.fill`)
-- [ ] Active category styling with blue highlight pill and high-contrast icon
-- [ ] Right container dynamically switches sub-panel based on selection
+- [x] Active category styling with blue highlight pill and high-contrast icon
+- [x] Right container dynamically switches sub-panel based on selection
 
 ## Comments

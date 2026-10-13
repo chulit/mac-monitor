@@ -6,14 +6,14 @@
 
 **Status:** ready-for-agent
 
-- [ ] "Monitoring Mode" selector cards with descriptions (Normal, Reduced, High Detail)
-- [ ] "Sampling Intervals" card with Custom dropdown and individual metric interval sliders:
+- [x] "Monitoring Mode" selector cards with descriptions (Normal, Reduced, High Detail)
+- [x] "Sampling Intervals" card with Custom dropdown and individual metric interval sliders:
   - CPU (1 second)
   - Memory (2 seconds)
   - Disk (5 seconds)
   - Network (2 seconds)
   - Temperature (2 seconds)
-- [ ] "Monitored Metrics" card with individual switches: CPU Usage, Memory, Disk, Network, Temperature
-- [ ] "Resource Limits" sliders at bottom
+- [x] "Monitored Metrics" card with individual switches: CPU Usage, Memory, Disk, Network, Temperature
+- [x] "Resource Limits" sliders at bottom
 
 ## Comments
