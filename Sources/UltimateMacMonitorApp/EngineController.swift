@@ -17,12 +17,12 @@ final class EngineController: ObservableObject {
 
   init() {
     let clock = SystemClock()
-    // Provisional detection config pending Ship-07 numeric decisions.
+    // Detection config per Ship-07 numeric decisions.
     let rule = TechnicalRule(
-      threshold: 0.8,
-      triggerDuration: 5,
-      recoveryDuration: 5,
-      cooldown: 30
+      threshold: 0.9,
+      triggerDuration: 30,
+      recoveryDuration: 30,
+      cooldown: 900
     )
     pipeline = Pipeline(clock: clock, rules: [rule])
     host = HostCollector(clock: clock)
