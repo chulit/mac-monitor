@@ -6,6 +6,7 @@ let package = Package(
   platforms: [.macOS(.v13)],
   targets: [
     .target(name: "MonitoringEngine"),
+    .executableTarget(name: "UltimateMacMonitorApp", dependencies: ["MonitoringEngine"]),
     .testTarget(
       name: "MonitoringEngineTests",
       dependencies: ["MonitoringEngine"]
