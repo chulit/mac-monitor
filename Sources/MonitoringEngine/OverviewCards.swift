@@ -1,7 +1,7 @@
 import Foundation
 
 /// Anomaly category driving the badge icon and color on the overview cards.
-public enum IncidentCategory: String, Sendable, CaseIterable {
+public enum IncidentCategory: String, Sendable, CaseIterable, Hashable {
   case cpu
   case memory
   case disk
@@ -69,4 +69,83 @@ public func topProcesses(samples: [ProcessSample], metric: String, limit: Int) -
     .sorted { $0.value > $1.value }
     .prefix(max(limit, 0))
     .map { TopProcess(process: $0.process, share: min(max($0.value, 0), 1)) }
+}
+
+public struct LiveFinding: Sendable, Equatable, Hashable {
+  public let title: String
+  public let processName: String
+  public let startedAt: Date
+  public let category: IncidentCategory
+
+  public init(title: String, processName: String, startedAt: Date, category: IncidentCategory) {
+    self.title = title
+    self.processName = processName
+    self.startedAt = startedAt
+    self.category = category
+  }
+}
+
+/// Real-time finding stream for the investigation: the most recent incidents,
+/// newest first, each with its title, responsible process, and category.
+/// Only engine-known incidents appear — nothing is synthesized.
+public func liveFindings(
+  incidents: [Incident],
+  timelines: [IncidentTimeline],
+  limit: Int
+) -> [LiveFinding] {
+  incidents
+    .sorted { $0.startedAt > $1.startedAt }
+    .prefix(max(limit, 0))
+    .map { incident in
+      let timeline = timelines.first { $0.incident == incident }
+      let metric = timeline?.metricSamples.first?.metric
+      return LiveFinding(
+        title: incidentTitle(incident: incident, metric: metric),
+        processName: timeline?.relevantProcesses.first?.process.name ?? "System",
+        startedAt: incident.startedAt,
+        category: incidentCategory(metric: metric)
+      )
+    }
+}
+
+public struct PreliminaryInsight: Sendable, Equatable, Hashable {
+  public let title: String
+  public let headline: String
+  public let detail: String
+  public let category: IncidentCategory
+
+  public init(title: String, headline: String, detail: String, category: IncidentCategory) {
+    self.title = title
+    self.headline = headline
+    self.detail = detail
+    self.category = category
+  }
+}
+
+/// Honest insight summaries built from the engine's own graded explanations:
+/// the headline is the most informative fact, the detail the leading
+/// hypothesis. Timelines without any recorded fact are skipped.
+public func preliminaryInsights(
+  timelines: [IncidentTimeline],
+  limit: Int
+) -> [PreliminaryInsight] {
+  timelines
+    .sorted { $0.incident.startedAt > $1.incident.startedAt }
+    .prefix(max(limit, 0))
+    .compactMap { timeline in
+      let explanation = makeExplanation(timeline)
+      let metric = timeline.metricSamples.first?.metric
+      guard
+        let headline = explanation.facts.first(where: { $0.contains("largest share") })
+          ?? explanation.facts.first
+      else {
+        return nil
+      }
+      return PreliminaryInsight(
+        title: incidentTitle(incident: timeline.incident, metric: metric),
+        headline: headline,
+        detail: explanation.hypotheses.first ?? "",
+        category: incidentCategory(metric: metric)
+      )
+    }
 }

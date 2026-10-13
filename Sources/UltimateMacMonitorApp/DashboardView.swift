@@ -19,6 +19,7 @@ struct DashboardView: View {
           VStack(alignment: .leading, spacing: 16) {
             OverviewHeaderView(controller: controller, timeRange: $timeRange)
             investigationCard
+            investigationFindings
             metricCards
             usageTimelineCard
             bottomCards
@@ -123,6 +124,29 @@ struct DashboardView: View {
           now: Date()
         )
       )
+      .transition(.scale(scale: 0.96).combined(with: .opacity))
+    }
+  }
+
+  /// Live findings + preliminary insights, visible only while investigating.
+  /// Covered by the same spring as the progress card above.
+  @ViewBuilder
+  private var investigationFindings: some View {
+    if controller.isInvestigating,
+      let evaluation = controller.evaluation
+    {
+      HStack(alignment: .top, spacing: 12) {
+        LiveFindingsCard(
+          findings: liveFindings(
+            incidents: evaluation.incidents,
+            timelines: evaluation.timelines,
+            limit: 5
+          )
+        )
+        PreliminaryInsightsCard(
+          insights: preliminaryInsights(timelines: evaluation.timelines, limit: 3)
+        )
+      }
       .transition(.scale(scale: 0.96).combined(with: .opacity))
     }
   }
