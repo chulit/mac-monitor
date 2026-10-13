@@ -18,6 +18,17 @@ public struct ProcessIdentity: Sendable, Equatable {
   }
 }
 
+/// Sums one process's resource values across the given samples for budget
+/// reporting. Absent processes yield nil, never zero: a missing reading
+/// must not masquerade as idle.
+public func totalShare(processes: [ProcessSample], pid: Int32) -> Double? {
+  let matching = processes.filter { $0.process.id == String(pid) }
+  guard !matching.isEmpty else {
+    return nil
+  }
+  return min(matching.reduce(0) { $0 + $1.value }, 1)
+}
+
 public struct ProcessCollector {
   private var previousUsage: [Int32: (user: UInt64, system: UInt64)] = [:]
   private var identities: [Int32: ProcessIdentity] = [:]

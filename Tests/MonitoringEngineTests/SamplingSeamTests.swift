@@ -2148,6 +2148,21 @@ struct SamplingSeamTests {
     #expect(verdict.notes.count == 1)
   }
 
+  @Test("Self CPU lookup sums own share and stays silent when absent")
+  func selfShareLookup() {
+    let timestamp = Date(timeIntervalSince1970: 0)
+    let alpha = Process(id: "111", parent: nil, name: "Monitor")
+    let beta = Process(id: "222", parent: nil, name: "Other")
+    let samples = [
+      ProcessSample(timestamp: timestamp, process: alpha, metric: "cpu", value: 0.25),
+      ProcessSample(timestamp: timestamp, process: alpha, metric: "cpu", value: 0.25),
+      ProcessSample(timestamp: timestamp, process: beta, metric: "cpu", value: 0.5),
+    ]
+    #expect(totalShare(processes: samples, pid: 111) == 0.5)
+    #expect(totalShare(processes: samples, pid: 999) == nil)
+    #expect(totalShare(processes: [], pid: 111) == nil)
+  }
+
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in
       let critical = criticalRanges.contains { $0.contains(index) }
       return Sample(

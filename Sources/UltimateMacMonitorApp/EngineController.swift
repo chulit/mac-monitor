@@ -47,7 +47,11 @@ final class EngineController: ObservableObject {
     let now = Date()
     let samples = host.collect(now: now)
     let activity = processCollector.collect(now: now)
-    evaluation = pipeline.evaluate(samples, processes: activity)
+    let usage = totalShare(
+      processes: activity,
+      pid: ProcessInfo.processInfo.processIdentifier
+    ).map(ResourceUsage.init(used:))
+    evaluation = pipeline.evaluate(samples, processes: activity, usage: usage)
     processes = activity
   }
 }
