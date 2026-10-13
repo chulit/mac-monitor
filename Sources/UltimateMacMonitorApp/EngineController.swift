@@ -17,6 +17,7 @@ final class EngineController: ObservableObject {
   @Published private(set) var temperatureHistory: [(date: Date, value: Double)] = []
   @Published private(set) var temperatureSecondaryHistory: [(date: Date, value: Double)] = []
   @Published private(set) var temperatureStorageHistory: [(date: Date, value: Double)] = []
+  @Published private(set) var temperatureFresh = false
   @Published private(set) var baselineStatuses: [String: Baseline.Status] = [:]
   @Published private(set) var storageUnits = 0
   @Published private(set) var storageQuota = 150_000_000
@@ -130,6 +131,10 @@ final class EngineController: ObservableObject {
       temperatureHistory.append((date: now, value: temperature))
       temperatureHistory = Array(temperatureHistory.suffix(120))
     }
+    // A reading older than five ticks is displayed as unavailable, never
+    // as a stale value masquerading as current.
+    temperatureFresh =
+      temperatureHistory.last.map { now.timeIntervalSince($0.date) <= 5 } ?? false
     if let secondary = samples.first(where: { $0.metric == "temperature.secondary" && $0.availability == .available })?.value {
       temperatureSecondaryHistory.append((date: now, value: secondary))
       temperatureSecondaryHistory = Array(temperatureSecondaryHistory.suffix(120))

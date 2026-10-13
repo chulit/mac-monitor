@@ -19,13 +19,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
-    statusItems = (0..<4).map { _ in
+    statusItems = (0..<5).map { _ in
       let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
       item.button?.title = "–"
       item.button?.action = #selector(togglePopover(_:))
       item.button?.target = self
       return item
     }
+    statusItems.first?.button?.image = NSImage(
+      systemSymbolName: "thermometer",
+      accessibilityDescription: "Temperature"
+    )
   }
 
   func bind(_ controller: EngineController) {
@@ -40,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return
     }
     let texts = [
+      temperatureText(),
       percentText(controller?.cpuShare),
       percentText(controller?.memoryHistory.last?.value),
       percentText(controller?.diskHistory.last?.value),
@@ -48,6 +53,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     for (item, text) in zip(statusItems, texts) {
       item.button?.title = text ?? "–"
     }
+  }
+
+  private func temperatureText() -> String? {
+    guard controller?.temperatureFresh == true,
+      let value = controller?.temperatureHistory.last?.value
+    else {
+      return nil
+    }
+    return "\(Int(value.rounded()))°"
   }
 
   private func percentText(_ value: Double?) -> String? {

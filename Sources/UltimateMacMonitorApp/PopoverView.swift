@@ -89,20 +89,33 @@ struct PopoverView: View {
   }
 
   private var temperatureCard: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      HStack(spacing: 4) {
-        Image(systemName: "thermometer").font(.caption).foregroundStyle(.secondary)
-        Text("Temperature").font(.caption).foregroundStyle(.secondary)
+    Group {
+      if controller.temperatureFresh, let last = controller.temperatureHistory.last {
+        metricCard(
+          title: "Temperature",
+          icon: "thermometer",
+          tint: .orange,
+          value: "\(Int(last.value.rounded()))°",
+          history: controller.temperatureHistory,
+          scaled: false
+        )
+      } else {
+        VStack(alignment: .leading, spacing: 4) {
+          HStack(spacing: 4) {
+            Image(systemName: "thermometer").font(.caption).foregroundStyle(.secondary)
+            Text("Temperature").font(.caption).foregroundStyle(.secondary)
+          }
+          Text("–").font(.title3.bold().monospacedDigit())
+          Text("Unavailable on this Mac")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .frame(height: 28, alignment: .top)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
       }
-      Text("–").font(.title3.bold().monospacedDigit())
-      Text("Unavailable on this Mac")
-        .font(.caption2)
-        .foregroundStyle(.tertiary)
-        .frame(height: 28, alignment: .top)
     }
-    .padding(8)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
   }
 
   private func incidentsSection(_ active: [Incident]) -> some View {
