@@ -6,9 +6,16 @@
 
 **Status:** ready-for-agent
 
-- [ ] Metric selector tabs: `[ CPU | Memory | Disk | Network | Temperature ]`
-- [ ] Timeline area graph showing the metric trajectory leading up to and during the incident
-- [ ] Shaded incident span background highlighting the active duration of the incident
-- [ ] Interactive peak tooltip indicating exact peak time and percentage (e.g. `10:13:24 • CPU 92%`) with a vertical guideline and data point circle
+- [x] Metric selector tabs: `[ CPU | Memory | Disk | Network | Temperature ]`
+- [x] Timeline area graph showing the metric trajectory leading up to and during the incident
+- [x] Shaded incident span background highlighting the active duration of the incident
+- [x] Interactive peak tooltip indicating exact peak time and percentage (e.g. `10:13:24 • CPU 92%`) with a vertical guideline and data point circle
 
 ## Comments
+
+## Notes (2026-10-14)
+
+- Tab hanya untuk metrik yang benar-benar ada di sampel timeline.
+- Tooltip drag-to-inspect; penanda peak dari sampel maksimum asli.
+- Belum terverifikasi di Mac: `swift test` + tampilan (tidak bisa build
+  Swift di VM Linux).

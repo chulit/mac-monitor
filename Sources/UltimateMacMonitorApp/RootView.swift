@@ -39,7 +39,7 @@ struct RootView: View {
       case .processes:
         ProcessesView(controller: controller)
       case .incidents:
-        TimelineView(controller: controller)
+        IncidentsView(controller: controller)
       case .history:
         historyPlaceholder
       case .settings:
