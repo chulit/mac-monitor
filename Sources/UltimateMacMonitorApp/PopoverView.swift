@@ -241,41 +241,18 @@ struct PopoverView: View {
         .frame(width: 36, height: 36)
         .overlay(Image(systemName: "waveform.path.ecg").font(.callout).foregroundStyle(.red))
       VStack(alignment: .leading, spacing: 2) {
-        Text(incidentTitle(incident, timeline: timeline)).font(.callout.bold())
+        Text(incidentTitle(incident: incident, metric: timeline?.metricSamples.first?.metric))
+          .font(.callout.bold())
         Text(processName).font(.caption).foregroundStyle(.secondary)
       }
       Spacer()
-      Text(relativeTime(incident.startedAt))
+      Text(relativeTimeString(from: incident.startedAt, to: Date()))
         .font(.callout)
         .foregroundStyle(.secondary)
       Image(systemName: "chevron.right")
         .font(.caption)
         .foregroundStyle(.tertiary)
     }
-  }
-
-  private func incidentTitle(_ incident: Incident, timeline: IncidentTimeline?) -> String {
-    switch incident.source {
-    case .rule:
-      let metric = timeline?.metricSamples.first?.metric ?? "metric"
-      return "High \(metric.uppercased()) Usage"
-    case .baseline:
-      return "Unusual behavior"
-    }
-  }
-
-  private func relativeTime(_ date: Date) -> String {
-    let seconds = Date().timeIntervalSince(date)
-    if seconds < 60 {
-      return "just now"
-    }
-    if seconds < 3600 {
-      return "\(Int(seconds / 60))m ago"
-    }
-    if seconds < 86_400 {
-      return "\(Int(seconds / 3600))h ago"
-    }
-    return "\(Int(seconds / 86_400))d ago"
   }
 
   // MARK: Monitoring mode

@@ -7,6 +7,9 @@ import MonitoringEngine
 struct DashboardView: View {
   @ObservedObject var controller: EngineController
   @State private var timeRange: OverviewTimeRange = .default
+  /// Section navigation for the card links. A closure keeps the card inputs
+  /// narrow instead of handing the whole navigation store down.
+  var onNavigate: (AppSection) -> Void = { _ in }
 
   var body: some View {
     Group {
@@ -17,6 +20,7 @@ struct DashboardView: View {
             OverviewHeaderView(controller: controller, timeRange: $timeRange)
             metricCards
             usageTimelineCard
+            bottomCards
             detailSections(snapshot: snapshot)
           }
           .padding()
@@ -96,6 +100,22 @@ struct DashboardView: View {
       ],
       timeRange: timeRange
     )
+  }
+
+  private var bottomCards: some View {
+    HStack(alignment: .top, spacing: 12) {
+      RecentIncidentsCard(
+        incidents: (controller.evaluation?.incidents ?? [])
+          .sorted { $0.startedAt > $1.startedAt },
+        timelines: controller.evaluation?.timelines ?? [],
+        onSeeAll: { onNavigate(.incidents) },
+        onSelectIncident: { _ in onNavigate(.incidents) }
+      )
+      TopProcessesCard(
+        samples: controller.processes,
+        onSelectProcess: { onNavigate(.processes) }
+      )
+    }
   }
 
   @ViewBuilder
