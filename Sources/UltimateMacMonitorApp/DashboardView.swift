@@ -16,6 +16,7 @@ struct DashboardView: View {
           VStack(alignment: .leading, spacing: 16) {
             OverviewHeaderView(controller: controller, timeRange: $timeRange)
             metricCards
+            usageTimelineCard
             detailSections(snapshot: snapshot)
           }
           .padding()
@@ -83,6 +84,18 @@ struct DashboardView: View {
 
   private func percentText(_ value: Double?) -> String {
     value.map { "\(Int(($0 * 100).rounded()))%" } ?? "–"
+  }
+
+  private var usageTimelineCard: some View {
+    UsageTimelineCard(
+      histories: [
+        .cpu: controller.cpuHistory,
+        .memory: controller.memoryHistory,
+        .disk: controller.diskHistory,
+        .network: controller.networkHistory,
+      ],
+      timeRange: timeRange
+    )
   }
 
   @ViewBuilder
