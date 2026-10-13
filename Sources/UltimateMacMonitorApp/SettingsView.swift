@@ -12,6 +12,8 @@ final class SettingsViewModel: ObservableObject {
   @Published var launchAtLogin: Bool
   @Published var samplingInterval: TimeInterval
   @Published var errorMessage: String?
+  /// Full mirror for the settings center: panels bind to `$viewModel.current.<key>`.
+  @Published var current: MonitorSettings
 
   private let store: SettingsStore
 
@@ -19,12 +21,60 @@ final class SettingsViewModel: ObservableObject {
     self.store = store
     self.launchAtLogin = store.settings.launchAtLogin
     self.samplingInterval = store.settings.samplingInterval
+    self.current = store.settings
     store.addChangeHandler { [weak self] settings in
       Task { @MainActor in
         self?.launchAtLogin = settings.launchAtLogin
         self?.samplingInterval = settings.samplingInterval
+        self?.current = settings
       }
     }
+  }
+
+  /// Persists a plain settings value through the store.
+  func update<T>(_ keyPath: WritableKeyPath<MonitorSettings, T>, to value: T) {
+    store.update(keyPath, to: value)
+    errorMessage = nil
+  }
+
+  func setMonitoringMode(_ mode: MonitoringMode) {
+    store.setMonitoringMode(mode)
+    errorMessage = nil
+  }
+
+  func setMetricInterval(_ metric: String, to interval: TimeInterval) {
+    var intervals = current.metricIntervals
+    intervals[metric] = interval
+    store.update(\.metricIntervals, to: intervals)
+    errorMessage = nil
+  }
+
+  func setMonitored(_ metric: String, enabled: Bool) {
+    var flags = current.monitoredMetrics
+    flags[metric] = enabled
+    store.update(\.monitoredMetrics, to: flags)
+    errorMessage = nil
+  }
+
+  func toggleAlertType(_ id: String) {
+    var enabled = current.enabledAlertTypes
+    if enabled.contains(id) {
+      enabled.remove(id)
+    } else {
+      enabled.insert(id)
+    }
+    store.update(\.enabledAlertTypes, to: enabled)
+    errorMessage = nil
+  }
+
+  func resetAlertThresholds() {
+    let defaults = MonitorSettings.ship07Defaults
+    store.update(\.thresholdCPU, to: defaults.thresholdCPU)
+    store.update(\.thresholdMemory, to: defaults.thresholdMemory)
+    store.update(\.thresholdDisk, to: defaults.thresholdDisk)
+    store.update(\.thresholdNetwork, to: defaults.thresholdNetwork)
+    store.update(\.thresholdTemperature, to: defaults.thresholdTemperature)
+    errorMessage = nil
   }
 
   func setLaunchAtLogin(_ enabled: Bool) {

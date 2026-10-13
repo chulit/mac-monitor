@@ -4,6 +4,25 @@ import Foundation
 /// ~/Library/Logs/UltimateMacMonitor/debug.log. Synchronous and low-volume
 /// by design; safe to keep in the shipping app.
 enum AppLog {
+  /// Master switch for the debug log (Settings → Store Logs).
+  static var isEnabled = true
+
+  /// Size of the debug log on disk, if it exists.
+  static var logFileSize: Int? {
+    guard let url,
+      let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
+      let size = values.fileSize
+    else {
+      return nil
+    }
+    return size
+  }
+
+  /// The folder holding the app's on-disk data (debug log).
+  static var dataFolder: URL? {
+    url?.deletingLastPathComponent()
+  }
+
   private static var url: URL? {
     let manager = FileManager.default
     guard
@@ -17,6 +36,9 @@ enum AppLog {
   }
 
   static func event(_ message: String) {
+    guard isEnabled else {
+      return
+    }
     guard let url else {
       return
     }
