@@ -1827,6 +1827,66 @@ struct SamplingSeamTests {
     #expect(fake.terminations.first?.forcefully == false)
   }
 
+  @Test("The capability matrix declares per-architecture expectations")
+  func capabilityMatrixDeclaresExpectations() {
+    let arm = CapabilityMatrix.forArchitecture("arm64")
+    #expect(arm.architecture == "arm64")
+    #expect(arm.supports("cpu"))
+    #expect(arm.supports("memory"))
+    #expect(!arm.supports("quantum"))
+    let intel = CapabilityMatrix.forArchitecture("x86_64")
+    #expect(intel.supports("cpu"))
+    #expect(intel.supports("memory"))
+    let unknown = CapabilityMatrix.forArchitecture("riscv")
+    #expect(!unknown.supports("cpu"))
+    #expect(!unknown.supports("memory"))
+    let current = CapabilityMatrix.current()
+    #expect(!current.architecture.isEmpty)
+    #expect(current.supports("cpu"))
+  }
+
+  @Test("Unavailable metrics stay unavailable across every surface")
+  func unavailableStaysUnavailableEverywhere() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let memory = (0..<22).map { index in
+      Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: .unavailable,
+        value: nil,
+        metric: "memory"
+      )
+    }
+    let evaluation = pipeline.evaluate(cpu + memory)
+    #expect(evaluation.incidents.count == 1)
+    #expect(evaluation.gaps.count == 22)
+    let timeline = try #require(evaluation.timelines.first)
+    #expect(timeline.gaps.count == 11)
+    #expect(!timeline.metricSamples.contains { $0.metric == "memory" })
+    let points = makeTimelinePoints(timeline)
+    #expect(points.allSatisfy { !$0.tooltip.contains("memory") })
+    #expect(points.allSatisfy { $0.tooltip.contains("data unavailable") })
+    let archive = IncidentArchive()
+    let package = try archive.export(
+      timeline,
+      summaries: [],
+      redactProcessNames: false,
+      now: start.addingTimeInterval(30)
+    )
+    #expect(package.gaps.count == 11)
+    #expect(!package.metricSamples.contains { $0.metric == "memory" })
+    let reopened = try archive.open(try package.encoded())
+    #expect(reopened.package.gaps == package.gaps)
+  }
+
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in
       let critical = criticalRanges.contains { $0.contains(index) }
       return Sample(
