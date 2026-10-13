@@ -335,15 +335,18 @@ public func formatRate(_ bytesPerSecond: Double) -> String {
 
 /// Y-domain for live sparklines: pads varying data, centers constant data
 /// so flat readings render as a band instead of a line glued to an edge.
+/// Clamping applies to unit-scale readings only: network rates are bytes per
+/// second and temperatures are degrees, and clamping those inverted the range.
 public func chartDomain(values: [Double]) -> ClosedRange<Double> {
-  guard let lo = values.min(), let hi = values.max() else {
+  let clean = values.filter(\.isFinite)
+  guard let lo = clean.min(), let hi = clean.max() else {
     return 0...1
   }
-  if hi > lo {
-    let padding = max((hi - lo) * 0.25, 0.02)
-    return max(0, lo - padding)...min(1, hi + padding)
-  }
-  return max(0, lo - 0.1)...min(1, hi + 0.1)
+  let unitScale = lo >= 0 && hi <= 1
+  let padding = hi > lo ? max((hi - lo) * 0.25, 0.02) : max(abs(hi) * 0.1, 0.1)
+  let lower = unitScale ? max(0, lo - padding) : lo - padding
+  let upper = unitScale ? min(1, hi + padding) : hi + padding
+  return lower...upper
 }
 
 public func makeExplanation(_ timeline: IncidentTimeline) -> Explanation {
