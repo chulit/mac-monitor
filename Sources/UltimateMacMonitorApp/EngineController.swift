@@ -115,7 +115,12 @@ final class EngineController: ObservableObject {
   }
 
   func requestHighDetail(seconds: TimeInterval) {
-    pipeline.requestHighDetail(duration: seconds)
+
+  /// Identity token binding a process to its start time, for the safe
+  /// termination flow: a reused PID never matches a stale token.
+  func processIdentity(for process: Process) -> ProcessIdentity? {
+    processCollector.identity(for: process)
+  }    pipeline.requestHighDetail(duration: seconds)
   }
 
   /// Ends the high-detail session early (Stop Investigation button).
