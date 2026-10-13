@@ -120,6 +120,35 @@ public final class Pipeline<C: Clock> {
     pendingObservationTransitions.append(transition)
   }
 
+  /// Ends a high-detail session early, as when the user taps Stop Investigation.
+  /// A no-op when no session is active. Mirrors the natural expiry path so the
+  /// timeline reads the same whether the session timed out or was stopped.
+  public func endHighDetail() {
+    guard var state = observationState else {
+      return
+    }
+    guard state.coarse == .highDetail, state.highDetailEndsAt != nil else {
+      return
+    }
+    let now = clock.now()
+    state.coarse = .normal
+    state.highDetailEndsAt = nil
+    state.highDetailLimit = nil
+    state.highDetailWarned = false
+    state.overBudgetStreak = 0
+    state.underBudgetStreak = 0
+    let transition = ObservationTransition(
+      timestamp: now,
+      from: .highDetail,
+      to: .normal,
+      reason: "high-detail session ended early",
+      affectedMetrics: []
+    )
+    observationState = state
+    observationHistory.append(transition)
+    pendingObservationTransitions.append(transition)
+  }
+
   public func evaluate(
     _ samples: [Sample],
     processes: [ProcessSample] = [],

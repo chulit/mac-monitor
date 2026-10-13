@@ -6,6 +6,7 @@ import MonitoringEngine
 /// stretching empty rows across the window.
 struct DashboardView: View {
   @ObservedObject var controller: EngineController
+  @State private var timeRange: OverviewTimeRange = .default
 
   var body: some View {
     Group {
@@ -13,22 +14,7 @@ struct DashboardView: View {
         let snapshot = makeDashboard(evaluation, detail: .detailed)
         ScrollView {
           VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-              HStack(alignment: .firstTextBaseline) {
-                Text(snapshot.headline)
-                  .font(.title2.bold())
-                Spacer()
-                statusPill(snapshot.monitoring)
-              }
-              if let detail = snapshot.monitoring.detail {
-                Text(detail)
-                  .font(.callout)
-                  .foregroundStyle(.secondary)
-              }
-              Text("System health: unknown (not assessed)")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-            }
+            OverviewHeaderView(controller: controller, timeRange: $timeRange)
             HStack(spacing: 12) {
               statCard(
                 title: "CPU",
@@ -128,22 +114,6 @@ struct DashboardView: View {
       return String(format: "%.1fM", millions)
     }
     return "\(controller.storageQuota)"
-  }
-
-  private func statusPill(_ monitoring: MonitoringStatus) -> some View {
-    let color: Color =
-      switch monitoring.headline {
-      case "Reduced monitoring": .orange
-      case "High-detail investigation": .blue
-      default: .green
-      }
-    return HStack(spacing: 4) {
-      Circle().fill(color).frame(width: 8, height: 8)
-      Text(monitoring.headline).font(.caption.bold())
-    }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 4)
-    .background(color.opacity(0.12), in: Capsule())
   }
 
   private func statCard(
