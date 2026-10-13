@@ -79,4 +79,80 @@ struct OverviewCardsTests {
     #expect(top.allSatisfy { $0.share <= 1 })
     #expect(topProcesses(samples: [], metric: "cpu", limit: 3) == [])
   }
+
+  private func makeTimeline(
+    metric: String,
+    processName: String,
+    startedAt: Date
+  ) -> IncidentTimeline {
+    let incident = Incident(
+      startedAt: startedAt,
+      peakAt: startedAt.addingTimeInterval(60),
+      recoveredAt: nil,
+      source: .rule(version: "v1")
+    )
+    return IncidentTimeline(
+      incident: incident,
+      metricSamples: [
+        Sample(timestamp: startedAt, availability: .available, value: 0.9, metric: metric)
+      ],
+      gaps: [],
+      markers: [],
+      ruleVersion: "v1",
+      baselineVersion: nil,
+      relevantProcesses: [
+        ProcessRelevance(
+          process: Process(id: "1", parent: nil, name: processName),
+          contribution: 0.6,
+          reasons: ["top contributor"]
+        )
+      ]
+    )
+  }
+
+  @Test("Live findings stream the newest incidents first")
+  func liveFindingsOrder() {
+    let base = Date(timeIntervalSince1970: 20_000)
+    let old = makeTimeline(metric: "memory", processName: "Safari", startedAt: base)
+    let recent = makeTimeline(metric: "cpu", processName: "WindowServer", startedAt: base.addingTimeInterval(300))
+    let findings = liveFindings(
+      incidents: [old.incident, recent.incident],
+      timelines: [old, recent],
+      limit: 5
+    )
+    #expect(findings.count == 2)
+    #expect(findings[0].title == "High CPU Usage")
+    #expect(findings[0].processName == "WindowServer")
+    #expect(findings[0].category == .cpu)
+    #expect(findings[1].category == .memory)
+  }
+
+  @Test("Live findings fall back to System without attribution")
+  func liveFindingsNoAttribution() {
+    let incident = Incident(
+      startedAt: Date(timeIntervalSince1970: 20_000),
+      peakAt: Date(timeIntervalSince1970: 20_060),
+      recoveredAt: nil,
+      source: .baseline(version: "v1")
+    )
+    let findings = liveFindings(incidents: [incident], timelines: [], limit: 5)
+    #expect(findings.count == 1)
+    #expect(findings[0].title == "Unusual behavior")
+    #expect(findings[0].processName == "System")
+    #expect(findings[0].category == .unknown)
+  }
+
+  @Test("Preliminary insights use the engine's own explanations")
+  func preliminaryInsightsContent() throws {
+    let base = Date(timeIntervalSince1970: 20_000)
+    let timeline = makeTimeline(metric: "cpu", processName: "WindowServer", startedAt: base)
+    let insights = preliminaryInsights(timelines: [timeline], limit: 3)
+    #expect(insights.count == 1)
+    let insight = try #require(insights.first)
+    #expect(insight.title == "High CPU Usage")
+    #expect(insight.headline.contains("WindowServer"))
+    #expect(insight.headline.contains("largest share"))
+    #expect(insight.detail.contains("Possible cause"))
+    #expect(insight.category == .cpu)
+  }
 }
