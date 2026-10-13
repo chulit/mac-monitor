@@ -41,7 +41,7 @@ struct RootView: View {
       case .incidents:
         IncidentsView(controller: controller)
       case .history:
-        historyPlaceholder
+        HistoryView(controller: controller)
       case .settings:
         EmptyView()
       }
@@ -99,19 +99,4 @@ struct RootView: View {
   }
 
   // MARK: Detail
-
-  /// Temporary until the History module lands its real views.
-  private var historyPlaceholder: some View {
-    VStack(spacing: 12) {
-      Image(systemName: "clock")
-        .font(.largeTitle)
-        .foregroundStyle(.secondary)
-      Text("History")
-        .font(.title2.bold())
-      Text("Multi-day trends and the incident archive arrive with the History module.")
-        .font(.callout)
-        .foregroundStyle(.secondary)
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-  }
 }
