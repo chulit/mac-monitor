@@ -2126,7 +2126,7 @@ struct SamplingSeamTests {
     _ = processes.collect(now: start)
     var system: [Sample] = []
     var activity: [ProcessSample] = []
-    for step in 0..<10 {
+    for step in 0..<40 {
       Thread.sleep(forTimeInterval: 0.05)
       let moment = start.addingTimeInterval(TimeInterval(step + 1) * 0.05)
       system = host.collect(now: moment)
