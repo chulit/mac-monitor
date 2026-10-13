@@ -1,14 +1,8 @@
 import Combine
 import Foundation
-
-/// Deep-link target for opening the full window from the popover.
-enum AppSection: String, Hashable {
-  case dashboard
-  case investigation
-  case processes
-}
+import MonitoringEngine
 
 @MainActor
 final class NavigationStore: ObservableObject {
-  @Published var section: AppSection? = .dashboard
+  @Published var section: AppSection? = .overview
 }
