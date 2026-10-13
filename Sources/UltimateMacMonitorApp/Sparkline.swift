@@ -23,7 +23,13 @@ struct Sparkline: View {
         }
         ZStack {
           fillPath(points: points, height: geometry.size.height)
-            .fill(tint.opacity(0.25))
+            .fill(
+              LinearGradient(
+                colors: [tint.opacity(0.35), tint.opacity(0.02)],
+                startPoint: .top,
+                endPoint: .bottom
+              )
+            )
           linePath(points: points)
             .stroke(tint, lineWidth: 1.5)
         }

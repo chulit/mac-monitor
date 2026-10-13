@@ -67,7 +67,7 @@ final class EngineController: ObservableObject {
         highDetailInterval: 0.5,
         overBudgetEvaluationsToDegrade: 3,
         underBudgetEvaluationsToRecover: 3,
-        maximumHighDetailDuration: 600,
+        maximumHighDetailDuration: 1800,
         highDetailWarningBeforeEnd: 60
       ),
       retention: RetentionPolicy(
