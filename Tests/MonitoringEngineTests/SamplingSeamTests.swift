@@ -1711,6 +1711,48 @@ struct SamplingSeamTests {
     #expect(notifier.update(observed.evaluate(calm, usage: under), now: start).isEmpty)
   }
 
+  @Test("Host collectors produce timestamped samples with honest availability")
+  func hostCollectorsSpeakTheSeam() {
+    let start = Date(timeIntervalSince1970: 1_000_000)
+    let clock = ControlledClock(startingAt: start)
+    var collector = HostCollector(clock: clock)
+    let first = collector.collect(now: clock.now())
+    #expect(Set(first.map(\.metric)) == ["cpu", "memory"])
+    #expect(first.allSatisfy { $0.timestamp == start })
+    let cpu = first.first { $0.metric == "cpu" }
+    #expect(cpu?.availability == .unavailable)
+    #expect(cpu?.value == nil)
+    let memory = first.first { $0.metric == "memory" }
+    if memory?.availability == .available, let value = memory?.value {
+      #expect(value >= 0 && value <= 1)
+    } else {
+      #expect(memory?.availability == .unavailable)
+    }
+  }
+
+  @Test("Host collectors measure real deltas on repeat collections")
+  func hostCollectorsMeasureDeltas() throws {
+    let start = Date(timeIntervalSince1970: 2_000_000)
+    let clock = ControlledClock(startingAt: start)
+    var collector = HostCollector(clock: clock)
+    let moment = start.addingTimeInterval(60)
+    _ = collector.collect(now: start)
+    var second = collector.collect(now: moment)
+    for _ in 0..<40 {
+      if second.first(where: { $0.metric == "cpu" })?.availability == .available {
+        break
+      }
+      Thread.sleep(forTimeInterval: 0.05)
+      second = collector.collect(now: moment)
+    }
+    let cpu = try #require(second.first { $0.metric == "cpu" })
+    #expect(cpu.availability == .available)
+    let value = try #require(cpu.value)
+    #expect(value >= 0 && value <= 1)
+    #expect(cpu.timestamp == moment)
+    #expect(collector.lastDuration == 0)
+  }
+
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in
       let critical = criticalRanges.contains { $0.contains(index) }
       return Sample(
