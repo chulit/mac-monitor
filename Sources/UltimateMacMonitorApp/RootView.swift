@@ -37,7 +37,7 @@ struct RootView: View {
           store.section = section
         }
       case .processes:
-        ProcessTreeView(controller: controller)
+        ProcessesView(controller: controller)
       case .incidents:
         TimelineView(controller: controller)
       case .history:

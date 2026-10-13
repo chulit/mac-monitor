@@ -55,7 +55,7 @@ struct TopProcessesCard: View {
   private func processRow(_ item: TopProcess) -> some View {
     Button(action: onSelectProcess) {
       HStack(spacing: 10) {
-        appIcon(for: item.process)
+        ProcessAppIcon(process: item.process)
           .frame(width: 28, height: 28)
         VStack(alignment: .leading, spacing: 4) {
           HStack {
@@ -79,14 +79,4 @@ struct TopProcessesCard: View {
     .accessibilityLabel("\(item.process.name), \(Int((item.share * 100).rounded())) percent")
   }
 
-  /// The real app icon via the running application; a generic glyph when the
-  /// process is gone or has no UI representation.
-  private func appIcon(for process: Process) -> Image {
-    if let pid = Int32(process.id),
-      let icon = NSRunningApplication(processIdentifier: pid)?.icon
-    {
-      return Image(nsImage: icon)
-    }
-    return Image(systemName: "app.fill")
-  }
 }
