@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   let navigation = NavigationStore()
   private var statusItems: [NSStatusItem] = []
   private var cancellables = Set<AnyCancellable>()
+  private var settingsWindow: NSWindow?
   private let popover: NSPopover = {
     let popover = NSPopover()
     popover.behavior = .transient
@@ -84,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       rootView: PopoverView(
         controller: controller,
         openSection: { [weak self] section in self?.openMonitor(section: section) },
+        onOpenSettings: { [weak self] in self?.openSettings() },
         onQuit: {
           AppLog.event("quit requested")
           NSApp.terminate(nil)
@@ -92,6 +94,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
     AppLog.event("toggle shown")
+  }
+
+  /// Opens the settings window behind the gear button (issue 19). The window
+  /// is created once and reused so its controls stay bound to the same store
+  /// the collection timer reads.
+  private func openSettings() {
+    guard let settings = controller?.settings else {
+      AppLog.event("openSettings aborted: no controller")
+      return
+    }
+    AppLog.event("openSettings")
+    popover.performClose(nil)
+    if settingsWindow == nil {
+      let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 420, height: 480),
+        styleMask: [.titled, .closable],
+        backing: .buffered,
+        defer: false
+      )
+      window.title = "Settings"
+      window.contentViewController = NSHostingController(
+        rootView: SettingsView(viewModel: SettingsViewModel(store: settings))
+      )
+      window.center()
+      settingsWindow = window
+    }
+    NSApp.activate(ignoringOtherApps: true)
+    settingsWindow?.makeKeyAndOrderFront(nil)
   }
 
   private func openMonitor(section: AppSection) {

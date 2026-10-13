@@ -34,7 +34,15 @@ final class EngineController: ObservableObject {
   private var timer: Timer?
   private var tickCount = 0
 
-  init() {
+  /// The user-facing settings. Owns the store when the caller passes none so
+  /// the controller always has a real login-item service behind it.
+  let settings: SettingsStore
+  private var collectionInterval: TimeInterval
+
+  init(settings: SettingsStore? = nil) {
+    let store = settings ?? SettingsStore(loginItems: SMAppServiceLoginItems())
+    self.settings = store
+    self.collectionInterval = store.settings.samplingInterval
     let clock = SystemClock()
     // Full engine configuration per Ship-07 numeric decisions. Rules stay
     // scoped to fraction metrics: unbounded series (network) and physical
@@ -77,9 +85,20 @@ final class EngineController: ObservableObject {
       )
     )
     host = HostCollector(clock: clock)
+    store.addChangeHandler { [weak self] newSettings in
+      Task { @MainActor in
+        self?.applySettings(newSettings)
+      }
+    }
   }
 
-  func start(interval: TimeInterval = 1.0) {
+  /// Starts collection at the cadence chosen in settings.
+  func start() {
+    start(interval: settings.settings.samplingInterval)
+  }
+
+  func start(interval: TimeInterval) {
+    collectionInterval = interval
     stop()
     timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
       Task { @MainActor in
@@ -96,6 +115,14 @@ final class EngineController: ObservableObject {
 
   func requestHighDetail(seconds: TimeInterval) {
     pipeline.requestHighDetail(duration: seconds)
+  }
+
+  /// Restarts collection when the settings window picks a new cadence.
+  /// Anything else (launch at login, restore of an unchanged interval) leaves
+  /// the running timer alone.
+  private func applySettings(_ newSettings: MonitorSettings) {
+    guard newSettings.samplingInterval != collectionInterval else { return }
+    start(interval: newSettings.samplingInterval)
   }
 
   private func tick() {

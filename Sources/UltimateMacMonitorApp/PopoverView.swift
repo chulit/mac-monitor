@@ -9,6 +9,7 @@ import MonitoringEngine
 struct PopoverView: View {
   @ObservedObject var controller: EngineController
   var openSection: (AppSection) -> Void
+  var onOpenSettings: () -> Void
   var onQuit: () -> Void
 
   @State private var temperatureExpanded = true
@@ -59,7 +60,7 @@ struct PopoverView: View {
       }
       Spacer()
       Button {
-        openSection(.dashboard)
+        onOpenSettings()
       } label: {
         Image(systemName: "gearshape")
           .font(.body)
