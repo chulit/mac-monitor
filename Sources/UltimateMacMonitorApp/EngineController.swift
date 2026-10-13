@@ -117,6 +117,11 @@ final class EngineController: ObservableObject {
     pipeline.requestHighDetail(duration: seconds)
   }
 
+  /// Ends the high-detail session early (Stop Investigation button).
+  func endHighDetail() {
+    pipeline.endHighDetail()
+  }
+
   /// Incidents that have not recovered: the sidebar badge and the popover
   /// incident card read this instead of filtering the evaluation themselves.
   var activeIncidents: [Incident] {
