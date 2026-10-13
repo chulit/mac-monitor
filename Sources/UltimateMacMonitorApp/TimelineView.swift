@@ -33,8 +33,8 @@ struct TimelineView: View {
                 ForEach(timeline.relevantProcesses, id: \.process.id) { relevance in
                   VStack(alignment: .leading) {
                     Text(relevance.process.name)
-                    ForEach(relevance.reasons, id: \.self) { reason in
-                      Text(reason)
+                    ForEach(relevance.reasons.indices, id: \.self) { reasonIndex in
+                      Text(relevance.reasons[reasonIndex])
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     }
@@ -43,12 +43,14 @@ struct TimelineView: View {
               }
             }
             Section("Explanation") {
-              ForEach(explanation.facts, id: \.self) { Text($0) }
-              ForEach(explanation.hypotheses, id: \.self) {
-                Text($0).italic()
+              ForEach(explanation.facts.indices, id: \.self) { index in
+                Text(explanation.facts[index])
               }
-              ForEach(explanation.uncertainty, id: \.self) {
-                Text($0).foregroundStyle(.secondary)
+              ForEach(explanation.hypotheses.indices, id: \.self) { index in
+                Text(explanation.hypotheses[index]).italic()
+              }
+              ForEach(explanation.uncertainty.indices, id: \.self) { index in
+                Text(explanation.uncertainty[index]).foregroundStyle(.secondary)
               }
             }
           }
@@ -74,7 +76,8 @@ struct TimelineView: View {
           )
         }
       }
-      ForEach(markers, id: \.timestamp) { marker in
+      ForEach(markers.indices, id: \.self) { index in
+        let marker = markers[index]
         RuleMark(x: .value("Event", marker.timestamp))
           .foregroundStyle(marker.kind == .recovered ? .green : .orange)
           .annotation(position: .top, alignment: .center) {

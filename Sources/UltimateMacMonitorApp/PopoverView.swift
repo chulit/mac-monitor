@@ -176,7 +176,7 @@ struct PopoverView: View {
           .buttonStyle(.link)
           .font(.callout)
       }
-      ForEach(active.prefix(3), id: \.startedAt) { incident in
+      ForEach(Array(active.prefix(3).enumerated()), id: \.offset) { _, incident in
         let name = controller.evaluation?.timelines.first { $0.incident == incident }?
           .relevantProcesses.first?.process.name ?? "System"
         HStack {

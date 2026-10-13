@@ -91,6 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       )
     )
     popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+    AppLog.event("toggle shown")
   }
 
   private func openMonitor(section: AppSection) {
