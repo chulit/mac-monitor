@@ -11,13 +11,6 @@ struct OverviewHeaderView: View {
   /// Matches the popover's 30-minute investigation session.
   private let investigationSeconds: TimeInterval = 1800
 
-  private var isInvestigating: Bool {
-    if case .highDetail = controller.evaluation?.observation?.mode {
-      return true
-    }
-    return false
-  }
-
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       HStack(alignment: .center) {
@@ -106,7 +99,7 @@ struct OverviewHeaderView: View {
 
   @ViewBuilder
   private var investigationButton: some View {
-    if isInvestigating {
+    if controller.isInvestigating {
       Button {
         controller.endHighDetail()
       } label: {

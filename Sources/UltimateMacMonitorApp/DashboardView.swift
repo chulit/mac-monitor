@@ -15,20 +15,7 @@ struct DashboardView: View {
         ScrollView {
           VStack(alignment: .leading, spacing: 16) {
             OverviewHeaderView(controller: controller, timeRange: $timeRange)
-            HStack(spacing: 12) {
-              statCard(
-                title: "CPU",
-                value: controller.cpuShare,
-                history: controller.cpuHistory,
-                tint: .blue
-              )
-              statCard(
-                title: "Memory",
-                value: controller.memoryHistory.last?.value,
-                history: controller.memoryHistory,
-                tint: .green
-              )
-            }
+            metricCards
             detailSections(snapshot: snapshot)
           }
           .padding()
@@ -39,6 +26,63 @@ struct DashboardView: View {
       }
     }
     .navigationTitle("Ultimate Mac Monitor")
+  }
+
+  private var metricCards: some View {
+    let investigating = controller.isInvestigating
+    return HStack(spacing: 12) {
+      MetricStatCard(
+        title: "CPU",
+        icon: "cpu",
+        tint: .blue,
+        valueText: percentText(controller.cpuShare),
+        history: controller.cpuHistory,
+        delta: investigating
+          ? baselineDeviation(
+            current: controller.cpuShare, baselineMean: controller.baselineMeans["cpu"])
+          : nil
+      )
+      MetricStatCard(
+        title: "Memory",
+        icon: "memorychip",
+        tint: .purple,
+        valueText: percentText(controller.memoryHistory.last?.value),
+        history: controller.memoryHistory,
+        delta: investigating
+          ? baselineDeviation(
+            current: controller.memoryHistory.last?.value,
+            baselineMean: controller.baselineMeans["memory"])
+          : nil
+      )
+      MetricStatCard(
+        title: "Disk",
+        icon: "internaldrive",
+        tint: .green,
+        valueText: percentText(controller.diskHistory.last?.value),
+        history: controller.diskHistory,
+        delta: investigating
+          ? baselineDeviation(
+            current: controller.diskHistory.last?.value,
+            baselineMean: controller.baselineMeans["disk"])
+          : nil
+      )
+      MetricStatCard(
+        title: "Network",
+        icon: "wifi",
+        tint: .cyan,
+        valueText: controller.networkHistory.last.map { formatRate($0.value) } ?? "–",
+        history: controller.networkHistory,
+        delta: investigating
+          ? baselineDeviation(
+            current: controller.networkHistory.last?.value,
+            baselineMean: controller.baselineMeans["network"])
+          : nil
+      )
+    }
+  }
+
+  private func percentText(_ value: Double?) -> String {
+    value.map { "\(Int(($0 * 100).rounded()))%" } ?? "–"
   }
 
   @ViewBuilder
@@ -114,24 +158,5 @@ struct DashboardView: View {
       return String(format: "%.1fM", millions)
     }
     return "\(controller.storageQuota)"
-  }
-
-  private func statCard(
-    title: String,
-    value: Double?,
-    history: [(date: Date, value: Double)],
-    tint: Color
-  ) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text(title.uppercased())
-        .font(.caption.bold())
-        .foregroundStyle(.secondary)
-      Text(value.map { "\(Int(($0 * 100).rounded()))%" } ?? "–")
-        .font(.largeTitle.bold().monospacedDigit())
-      Sparkline(values: history, tint: tint)
-    }
-    .padding(10)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
   }
 }
