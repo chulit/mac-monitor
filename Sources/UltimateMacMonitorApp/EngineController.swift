@@ -32,6 +32,7 @@ final class EngineController: ObservableObject {
     policy: NotificationPolicy(cooldown: 900, highSeverityAfter: 300)
   )
   private var timer: Timer?
+  private var tickCount = 0
 
   init() {
     let clock = SystemClock()
@@ -98,6 +99,10 @@ final class EngineController: ObservableObject {
   }
 
   private func tick() {
+    tickCount += 1
+    if tickCount % 60 == 1 {
+      AppLog.event("tick #\(tickCount)")
+    }
     let now = Date()
     let activity = processCollector.collect(now: now)
     var samples =

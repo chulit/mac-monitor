@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    AppLog.event("launch")
     statusItems = (0..<5).map { _ in
       let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
       item.button?.title = "–"
@@ -34,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func bind(_ controller: EngineController) {
     self.controller = controller
+    AppLog.event("bind")
     controller.$evaluation
       .sink { [weak self] _ in self?.refresh() }
       .store(in: &cancellables)
@@ -69,18 +71,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   @objc private func togglePopover(_ sender: NSStatusBarButton) {
+    AppLog.event("toggle isShown=\(popover.isShown)")
     if popover.isShown {
       popover.performClose(nil)
       return
     }
     guard let controller else {
+      AppLog.event("toggle aborted: no controller")
       return
     }
     popover.contentViewController = NSHostingController(
       rootView: PopoverView(
         controller: controller,
         openSection: { [weak self] section in self?.openMonitor(section: section) },
-        onQuit: { NSApp.terminate(nil) }
+        onQuit: {
+          AppLog.event("quit requested")
+          NSApp.terminate(nil)
+        }
       )
     )
     popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
