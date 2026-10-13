@@ -37,6 +37,18 @@
 - Detail retention: **7 days**, then summarize
 - Quota unit is samples (engine counts samples): **150.000.000** (~8 days headroom at ~202 samples/s)
 
-### Benchmark gates (smoke level; tightening needs separate justification)
+### Benchmark gates (calibrated 2026-10-13, replaces the smoke values below)
+
+Measured on MacBook Air M2, 8-core, 8 GB, macOS 27.0.1 (Mac14,2), debug build as an upper bound, 20 repetitions per level. Gates sit ~75–200x above observed maxima: silent when healthy, tripping on hangs and 10–100x regressions.
+
+| Level | wall | CPU | resident growth | blocks out |
+|---|---|---|---|---|
+| idle | 0.01s | 10.000.000ns | 10 MB | 0 |
+| normal | 0.01s | 10.000.000ns | 10 MB | 0 |
+| investigation | 0.05s | 50.000.000ns | 10 MB | 0 |
+
+Device-specific: other models need their own matrix; these numbers do not transfer. Tightening beyond calibration needs separate justification with measurement data.
+
+### Benchmark gates (smoke level; superseded by the calibrated table above)
 
 - Wall **1s**, CPU **1s**, resident growth **100 MB**, block output **1.000** — identical for idle, normal, and investigation
