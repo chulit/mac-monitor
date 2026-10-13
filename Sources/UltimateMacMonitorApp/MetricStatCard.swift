@@ -36,10 +36,6 @@ struct MetricStatCard: View {
       }
       Sparkline(values: history, tint: tint)
     }
-    .padding(12)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
-    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.gray.opacity(0.15)))
-    .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
+    .dashboardCardStyle()
   }
 }
