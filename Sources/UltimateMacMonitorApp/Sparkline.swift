@@ -2,16 +2,39 @@ import SwiftUI
 import MonitoringEngine
 
 /// Minimal sparkline drawn as explicit paths and clipped to its frame.
-/// Used instead of Charts in dense card layouts, where a chart plot area
-/// can overflow its bounds and wash across the surrounding interface.
+/// Replaces Charts in dense card layouts, where a chart plot area overflowed
+/// its bounds and washed across the popover. Inputs are sanitized: a single
+/// non-finite reading used to take the whole popover down with it.
 struct Sparkline: View {
   var values: [(date: Date, value: Double)]
   var tint: Color
 
   var body: some View {
-    // BISECT ROUND 4 (Ship-21): Sparkline body disabled. If the popover
-    // lives, this body is the killer; helpers below go quiet meanwhile.
-    EmptyView().frame(height: 28)
+    let clean = values.filter { $0.value.isFinite }
+    if clean.count >= 2 {
+      GeometryReader { geometry in
+        let domain = chartDomain(values: clean.map(\.value))
+        let span = max(domain.upperBound - domain.lowerBound, 1e-9)
+        let points = clean.enumerated().map { index, entry in
+          CGPoint(
+            x: geometry.size.width * Double(index) / Double(clean.count - 1),
+            y: geometry.size.height * (1 - (entry.value - domain.lowerBound) / span)
+          )
+        }
+        ZStack {
+          fillPath(points: points, height: geometry.size.height)
+            .fill(tint.opacity(0.25))
+          linePath(points: points)
+            .stroke(tint, lineWidth: 1.5)
+        }
+      }
+      .frame(height: 28)
+      .clipped()
+    } else {
+      RoundedRectangle(cornerRadius: 2)
+        .fill(tint.opacity(0.15))
+        .frame(height: 28)
+    }
   }
 
   private func linePath(points: [CGPoint]) -> Path {

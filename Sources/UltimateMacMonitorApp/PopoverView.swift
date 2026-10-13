@@ -14,7 +14,15 @@ struct PopoverView: View {
     VStack(alignment: .leading, spacing: 12) {
       header
       cards
-      // BISECT ROUND 4 (Ship-21): full cards back, Sparkline body stubbed.
+      temperatureDetail
+      if let evaluation = controller.evaluation {
+        let active = evaluation.incidents.filter { $0.recoveredAt == nil }
+        if !active.isEmpty {
+          incidentsSection(active)
+        }
+      }
+      modeSection
+      actionRow
     }
     .padding(14)
     .frame(width: 640)
