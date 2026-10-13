@@ -349,6 +349,64 @@ public func chartDomain(values: [Double]) -> ClosedRange<Double> {
   return lower...upper
 }
 
+/// A point on a sparkline in view-agnostic coordinates. The view maps its
+/// frame onto these; the smoothing math stays UI-free and unit tested.
+public struct CurvePoint: Sendable, Equatable {
+  public var x: Double
+  public var y: Double
+
+  public init(x: Double, y: Double) {
+    self.x = x
+    self.y = y
+  }
+}
+
+public struct CurveSegment: Sendable, Equatable {
+  public var start: CurvePoint
+  public var control1: CurvePoint
+  public var control2: CurvePoint
+  public var end: CurvePoint
+
+  public init(start: CurvePoint, control1: CurvePoint, control2: CurvePoint, end: CurvePoint) {
+    self.start = start
+    self.control1 = control1
+    self.control2 = control2
+    self.end = end
+  }
+}
+
+/// Smooth cubic-bezier segments through the points (Catmull-Rom to bezier).
+/// Consecutive segments share endpoints, so the rendered curve passes through
+/// every input point. Returns [] for fewer than two points.
+public func smoothCurveSegments(through points: [CurvePoint]) -> [CurveSegment] {
+  guard points.count >= 2 else {
+    return []
+  }
+  var segments: [CurveSegment] = []
+  for i in 0..<(points.count - 1) {
+    let p0 = points[max(i - 1, 0)]
+    let p1 = points[i]
+    let p2 = points[i + 1]
+    let p3 = points[min(i + 2, points.count - 1)]
+    let c1 = CurvePoint(x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6)
+    let c2 = CurvePoint(x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6)
+    segments.append(CurveSegment(start: p1, control1: c1, control2: c2, end: p2))
+  }
+  return segments
+}
+
+/// Relative deviation of the current reading from the learned baseline mean:
+/// 0.24 renders as "↑ +24% from baseline". Nil when there is no usable
+/// baseline, so the card shows no delta instead of a fabricated one.
+public func baselineDeviation(current: Double?, baselineMean: Double?) -> Double? {
+  guard let current, current.isFinite,
+    let mean = baselineMean, mean.isFinite, mean > 0
+  else {
+    return nil
+  }
+  return (current - mean) / mean
+}
+
 public func makeExplanation(_ timeline: IncidentTimeline) -> Explanation {
   let incident = timeline.incident
   var facts: [String] = []

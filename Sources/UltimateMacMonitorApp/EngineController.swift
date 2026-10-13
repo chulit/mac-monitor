@@ -19,6 +19,7 @@ final class EngineController: ObservableObject {
   @Published private(set) var temperatureStorageHistory: [(date: Date, value: Double)] = []
   @Published private(set) var temperatureFresh = false
   @Published private(set) var baselineStatuses: [String: Baseline.Status] = [:]
+  @Published private(set) var baselineMeans: [String: Double] = [:]
   @Published private(set) var storageUnits = 0
   @Published private(set) var storageQuota = 150_000_000
   @Published private(set) var notices: [Notice] = []
@@ -132,6 +133,15 @@ final class EngineController: ObservableObject {
     activeIncidents.count
   }
 
+  /// Whether a high-detail investigation session is running. Cards show their
+  /// baseline delta badges only in this mode.
+  var isInvestigating: Bool {
+    if case .highDetail = evaluation?.observation?.mode {
+      return true
+    }
+    return false
+  }
+
   /// Restarts collection when the settings window picks a new cadence.
   /// Anything else (launch at login, restore of an unchanged interval) leaves
   /// the running timer alone.
@@ -194,6 +204,7 @@ final class EngineController: ObservableObject {
       temperatureStorageHistory = Array(temperatureStorageHistory.suffix(120))
     }
     baselineStatuses = pipeline.baselines.mapValues { $0.status }
+    baselineMeans = pipeline.baselines.compactMapValues { $0.isActive ? $0.mean : nil }
     if let history = pipeline.history {
       storageUnits = history.storageUnits
       storageQuota = history.quota
