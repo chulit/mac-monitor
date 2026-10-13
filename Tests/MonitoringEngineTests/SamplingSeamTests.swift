@@ -1887,6 +1887,194 @@ struct SamplingSeamTests {
     #expect(reopened.package.gaps == package.gaps)
   }
 
+  @Test("Benchmarks run workloads and judge them against given budgets")
+  func benchmarksJudgeGivenBudgets() {
+    let idle = BenchmarkWorkload(
+      name: "idle",
+      batches: [BenchmarkBatch(samples: [], processes: [], usage: nil)],
+      repetitions: 2
+    )
+    let normal = BenchmarkWorkload(
+      name: "normal",
+      batches: [
+        BenchmarkBatch(
+          samples: SyntheticStream.scenario(.normal, startingAt: Date(timeIntervalSince1970: 0), spacing: 1.0).samples,
+          processes: [],
+          usage: nil
+        )
+      ],
+      repetitions: 2
+    )
+    let report = Benchmark.run(
+      workloads: [idle, normal],
+      budgets: ["idle": BenchmarkBudget(maxMeanWallSeconds: 60, maxMeanCPUNanos: nil, maxBlocksOut: nil)],
+      measure: { _ in Evaluation(incidents: [], gaps: [], timelines: []) }
+    )
+    #expect(report.results.count == 2)
+    let idleResult = report.results[0]
+    #expect(idleResult.workloadName == "idle")
+    #expect(idleResult.evaluations == 2)
+    #expect(idleResult.totalSamples == 0)
+    #expect(idleResult.meanWallSeconds >= 0)
+    #expect(idleResult.verdict == .pass)
+    let normalResult = report.results[1]
+    #expect(normalResult.evaluations == 2)
+    #expect(normalResult.totalSamples == 20)
+    #expect(normalResult.verdict == .unmeasured)
+  }
+
+  @Test("Budget verdicts compare each axis independently")
+  func budgetVerdictsCompareAxes() {
+    let observed = ObservedCost(
+      meanWallSeconds: 0.5,
+      maxWallSeconds: 0.9,
+      meanCPUNanos: 100,
+      maxCPUNanos: 200,
+      residentGrowthBytes: 1024,
+      blocksOut: 4
+    )
+    #expect(judge(observed, against: nil) == .unmeasured)
+    #expect(
+      judge(
+        observed,
+        against: BenchmarkBudget(
+          maxMeanWallSeconds: 1,
+          maxMeanCPUNanos: 1000,
+          maxResidentGrowthBytes: 2048,
+          maxBlocksOut: 8
+        )
+      ) == .pass
+    )
+    #expect(
+      judge(
+        observed,
+        against: BenchmarkBudget(
+          maxMeanWallSeconds: 0.1,
+          maxMeanCPUNanos: 1000,
+          maxResidentGrowthBytes: 2048,
+          maxBlocksOut: 8
+        )
+      ) == .fail(reasons: ["mean wall 0.5s exceeds budget 0.1s"])
+    )
+    let failed = judge(
+      observed,
+      against: BenchmarkBudget(
+        maxMeanWallSeconds: 0.1,
+        maxMeanCPUNanos: 10,
+        maxResidentGrowthBytes: 100,
+        maxBlocksOut: 1
+      )
+    )
+    if case .fail(let reasons) = failed {
+      #expect(reasons.count == 4)
+    } else {
+      Issue.record("expected failure")
+    }
+  }
+
+  @Test("Benchmarks run the real engine across all three levels")
+  func benchmarksRunRealEngine() {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let idle = BenchmarkWorkload(
+      name: "idle",
+      batches: [BenchmarkBatch(samples: [], processes: [], usage: nil)],
+      repetitions: 2
+    )
+    let normal = BenchmarkWorkload(
+      name: "normal",
+      batches: [
+        BenchmarkBatch(
+          samples: SyntheticStream.scenario(.normal, startingAt: start, spacing: 1.0).samples,
+          processes: [],
+          usage: nil
+        )
+      ],
+      repetitions: 2
+    )
+    let investigation = BenchmarkWorkload(
+      name: "investigation",
+      batches: [
+        BenchmarkBatch(
+          samples: SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples,
+          processes: [],
+          usage: nil
+        )
+      ],
+      repetitions: 2
+    )
+    let generous = BenchmarkBudget(
+      maxMeanWallSeconds: 60,
+      maxMeanCPUNanos: 60_000_000_000,
+      maxResidentGrowthBytes: 1_000_000_000,
+      maxBlocksOut: 1_000_000
+    )
+    let report = Benchmark.run(
+      workloads: [idle, normal, investigation],
+      budgets: ["idle": generous, "normal": generous, "investigation": generous],
+      measure: { batch in pipeline.evaluate(batch.samples, processes: batch.processes, usage: batch.usage) }
+    )
+    #expect(report.results.count == 3)
+    #expect(report.results.allSatisfy { $0.verdict == .pass })
+    #expect(report.results.allSatisfy { $0.evaluations == 2 })
+    #expect(report.results.map(\.totalSamples) == [0, 20, 44])
+    #expect(report.results.allSatisfy { $0.meanWallSeconds >= 0 })
+    #expect(!Benchmark.energyMeasured)
+  }
+
+  @Test("Benchmarks observe degradation engaging under budget pressure")
+  func benchmarksObserveDegradation() {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let policy = ObservationPolicy(
+      budgetLimit: 1.0,
+      criticalMetrics: ["cpu"],
+      normalInterval: 1.0,
+      reducedInterval: 5.0,
+      highDetailInterval: 0.5,
+      overBudgetEvaluationsToDegrade: 1,
+      underBudgetEvaluationsToRecover: 2,
+      maximumHighDetailDuration: 60,
+      highDetailWarningBeforeEnd: 10
+    )
+    let pipeline = Pipeline(clock: clock, rules: [], observation: policy)
+    let loaded = BenchmarkWorkload(
+      name: "loaded",
+      batches: [
+        BenchmarkBatch(
+          samples: SyntheticStream.scenario(.normal, startingAt: start, spacing: 1.0).samples,
+          processes: [],
+          usage: ResourceUsage(used: 2.0)
+        )
+      ],
+      repetitions: 3
+    )
+    var seen: [Evaluation] = []
+    let report = Benchmark.run(
+      workloads: [loaded],
+      budgets: [:],
+      measure: { batch in
+        let evaluation = pipeline.evaluate(
+          batch.samples,
+          processes: batch.processes,
+          usage: batch.usage
+        )
+        seen.append(evaluation)
+        return evaluation
+      }
+    )
+    #expect(seen.count == 3)
+    #expect(seen.last?.observation?.mode == .reduced(reason: "over resource budget", affectedMetrics: []))
+    #expect(report.results.first?.verdict == .unmeasured)
+  }
+
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in
       let critical = criticalRanges.contains { $0.contains(index) }
       return Sample(
