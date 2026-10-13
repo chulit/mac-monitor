@@ -33,7 +33,9 @@ struct RootView: View {
     } detail: {
       switch store.section ?? .overview {
       case .overview:
-        DashboardView(controller: controller)
+        DashboardView(controller: controller) { section in
+          store.section = section
+        }
       case .processes:
         ProcessTreeView(controller: controller)
       case .incidents:
