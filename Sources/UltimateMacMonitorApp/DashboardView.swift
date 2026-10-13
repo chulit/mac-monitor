@@ -1,4 +1,3 @@
-import Charts
 import SwiftUI
 import MonitoringEngine
 
@@ -159,23 +158,10 @@ struct DashboardView: View {
         .foregroundStyle(.secondary)
       Text(value.map { "\(Int(($0 * 100).rounded()))%" } ?? "–")
         .font(.largeTitle.bold().monospacedDigit())
-      Chart(history, id: \.date) { point in
-        AreaMark(x: .value("Time", point.date), y: .value(title, point.value))
-          .foregroundStyle(tint.gradient.opacity(0.35))
-        LineMark(x: .value("Time", point.date), y: .value(title, point.value))
-          .foregroundStyle(tint)
-      }
-      .chartYScale(domain: sparkDomain(values: history.map(\.value)))
-      .chartXAxis(.hidden)
-      .chartYAxis(.hidden)
-      .frame(height: 48)
+      Sparkline(values: history, tint: tint)
     }
     .padding(10)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
-  }
-
-  private func sparkDomain(values: [Double]) -> ClosedRange<Double> {
-    chartDomain(values: values)
   }
 }

@@ -7,6 +7,7 @@ let package = Package(
   targets: [
     .target(name: "MonitoringEngine"),
     .executableTarget(name: "UltimateMacMonitorApp", dependencies: ["MonitoringEngine"]),
+    .executableTarget(name: "CPUProbe", dependencies: []),
     .testTarget(
       name: "MonitoringEngineTests",
       dependencies: ["MonitoringEngine"]

@@ -99,10 +99,13 @@ final class EngineController: ObservableObject {
 
   private func tick() {
     let now = Date()
-    let samples =
+    let activity = processCollector.collect(now: now)
+    var samples =
       host.collect(now: now) + networkCollector.collect(now: now)
       + temperatureCollector.collect(now: now)
-    let activity = processCollector.collect(now: now)
+    if let systemCPU = processCollector.systemCPUSample() {
+      samples.insert(systemCPU, at: 0)
+    }
     let usage = totalShare(
       processes: activity,
       pid: ProcessInfo.processInfo.processIdentifier

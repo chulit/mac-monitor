@@ -1717,40 +1717,15 @@ struct SamplingSeamTests {
     let clock = ControlledClock(startingAt: start)
     var collector = HostCollector(clock: clock)
     let first = collector.collect(now: clock.now())
-    #expect(Set(first.map(\.metric)) == ["cpu", "memory", "disk"])
+    #expect(Set(first.map(\.metric)) == ["memory", "disk"])
     #expect(first.allSatisfy { $0.timestamp == start })
-    let cpu = first.first { $0.metric == "cpu" }
-    #expect(cpu?.availability == .unavailable)
-    #expect(cpu?.value == nil)
+    #expect(collector.lastDuration == 0)
     let memory = first.first { $0.metric == "memory" }
     if memory?.availability == .available, let value = memory?.value {
       #expect(value >= 0 && value <= 1)
     } else {
       #expect(memory?.availability == .unavailable)
     }
-  }
-
-  @Test("Host collectors measure real deltas on repeat collections")
-  func hostCollectorsMeasureDeltas() throws {
-    let start = Date(timeIntervalSince1970: 2_000_000)
-    let clock = ControlledClock(startingAt: start)
-    var collector = HostCollector(clock: clock)
-    let moment = start.addingTimeInterval(60)
-    _ = collector.collect(now: start)
-    var second = collector.collect(now: moment)
-    for _ in 0..<40 {
-      if second.first(where: { $0.metric == "cpu" })?.availability == .available {
-        break
-      }
-      Thread.sleep(forTimeInterval: 0.05)
-      second = collector.collect(now: moment)
-    }
-    let cpu = try #require(second.first { $0.metric == "cpu" })
-    #expect(cpu.availability == .available)
-    let value = try #require(cpu.value)
-    #expect(value >= 0 && value <= 1)
-    #expect(cpu.timestamp == moment)
-    #expect(collector.lastDuration == 0)
   }
 
   @Test("Process enumeration yields samples with reuse-safe identity")
@@ -2132,14 +2107,18 @@ struct SamplingSeamTests {
       let moment = start.addingTimeInterval(TimeInterval(step + 1) * 0.05)
       system = host.collect(now: moment)
       activity = processes.collect(now: moment)
-      if system.first(where: { $0.metric == "cpu" })?.availability == .available,
+      if processes.systemCPUSample() != nil,
         !activity.isEmpty
       {
         break
       }
     }
+    var assessed = system
+    if let systemCPU = processes.systemCPUSample() {
+      assessed.append(systemCPU)
+    }
     let verdict = PrivilegeProbe.assess(
-      systemSamples: system,
+      systemSamples: assessed,
       processSamples: activity,
       taskPortsAvailable: PrivilegeProbe.crossProcessTaskPorts()
     )
@@ -2258,6 +2237,21 @@ struct SamplingSeamTests {
     let flat = chartDomain(values: [1.0, 1.0])
     #expect(abs(flat.lowerBound - 0.9) < 1e-9)
     #expect(abs(flat.upperBound - 1.0) < 1e-9)
+  }
+
+  @Test("System CPU derives from summed process deltas")
+  func systemCPUDerivesFromProcessDeltas() throws {
+    var collector = ProcessCollector()
+    let start = Date(timeIntervalSince1970: 9_000_000)
+    _ = collector.collect(now: start)
+    #expect(collector.systemCPUSample() == nil)
+    Thread.sleep(forTimeInterval: 0.2)
+    _ = collector.collect(now: start.addingTimeInterval(0.2))
+    let sample = try #require(collector.systemCPUSample())
+    #expect(sample.metric == "cpu")
+    #expect(sample.availability == .available)
+    let value = try #require(sample.value)
+    #expect(value >= 0 && value <= 1)
   }
 
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in

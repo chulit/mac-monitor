@@ -1,14 +1,15 @@
 import Darwin
 import Foundation
 
-/// Reads live CPU and memory figures from Mach host statistics and shapes
-/// them into the sampling seam's samples. CPU utilization needs two reads
-/// to form a delta, so the first collection honestly reports unavailable.
-/// Memory use is an approximation: process-attributed pages over physical
-/// pages, clamped to a fraction.
+/// Reads live memory and disk figures and shapes them into the sampling
+/// seam's samples. System CPU deliberately lives elsewhere: Mach tick
+/// counters freeze under tickless idle on Apple Silicon and read a
+/// permanent ~100%, so CPU shares derive from per-process time deltas
+/// (see ProcessCollector.systemCPUSample). Memory use is an
+/// approximation: process-attributed pages over physical pages, clamped
+/// to a fraction.
 public struct HostCollector<C: Clock> {
   private let clock: C
-  private var previousTicks: CPUTicks?
   public private(set) var lastDuration: TimeInterval = 0
 
   public init(clock: C) {
@@ -18,59 +19,7 @@ public struct HostCollector<C: Clock> {
   public mutating func collect(now: Date) -> [Sample] {
     let started = clock.now()
     defer { lastDuration = clock.now().timeIntervalSince(started) }
-    return [cpuSample(at: now), memorySample(at: now), diskSample(at: now)]
-  }
-
-  private struct CPUTicks: Equatable {
-    let user: UInt64
-    let system: UInt64
-    let nice: UInt64
-    let idle: UInt64
-  }
-
-  private mutating func cpuSample(at now: Date) -> Sample {
-    guard let ticks = Self.cpuTicks() else {
-      return Sample(timestamp: now, availability: .unavailable, metric: "cpu")
-    }
-    defer { previousTicks = ticks }
-    guard let previous = previousTicks else {
-      return Sample(timestamp: now, availability: .unavailable, metric: "cpu")
-    }
-    let busy = (ticks.user &- previous.user) &+ (ticks.system &- previous.system)
-      &+ (ticks.nice &- previous.nice)
-    let total = busy &+ (ticks.idle &- previous.idle)
-    guard total > 0 else {
-      return Sample(timestamp: now, availability: .unavailable, metric: "cpu")
-    }
-    return Sample(
-      timestamp: now,
-      availability: .available,
-      value: Double(busy) / Double(total),
-      metric: "cpu"
-    )
-  }
-
-  private static func cpuTicks() -> CPUTicks? {
-    var info = host_cpu_load_info_data_t()
-    var count = mach_msg_type_number_t(
-      MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size
-    )
-    let host = mach_host_self()
-    defer { mach_port_deallocate(mach_task_self_, host) }
-    let result = withUnsafeMutablePointer(to: &info) {
-      $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-        host_statistics(host, HOST_CPU_LOAD_INFO, $0, &count)
-      }
-    }
-    guard result == KERN_SUCCESS else {
-      return nil
-    }
-    return CPUTicks(
-      user: UInt64(info.cpu_ticks.0),
-      system: UInt64(info.cpu_ticks.1),
-      nice: UInt64(info.cpu_ticks.2),
-      idle: UInt64(info.cpu_ticks.3)
-    )
+    return [memorySample(at: now), diskSample(at: now)]
   }
 
   private func diskSample(at now: Date) -> Sample {

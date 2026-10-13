@@ -34,8 +34,36 @@ public struct ProcessCollector {
   private var identities: [Int32: ProcessIdentity] = [:]
   private var previousParents: [Int32: Int32] = [:]
   private var previousNow: Date?
+  private var lastSystemBusyNanos: UInt64?
+  private var lastSystemElapsed: TimeInterval?
+  private var lastSystemTime: Date?
 
   public init() {}
+
+  /// System-wide CPU share derived from summed per-process time deltas.
+  /// Mach tick counters freeze under tickless idle on Apple Silicon, so
+  /// they read a permanent ~100%; rusage times are real time and stay
+  /// honest. Nil until two collections form a delta.
+  public func systemCPUSample() -> Sample? {
+    guard let busy = lastSystemBusyNanos,
+      let elapsed = lastSystemElapsed,
+      let measuredAt = lastSystemTime,
+      elapsed > 0
+    else {
+      return nil
+    }
+    let processors = max(ProcessInfo.processInfo.processorCount, 1)
+    let capacity = UInt64(elapsed * 1_000_000_000) * UInt64(processors)
+    guard capacity > 0 else {
+      return nil
+    }
+    return Sample(
+      timestamp: measuredAt,
+      availability: .available,
+      value: min(max(Double(busy) / Double(capacity), 0), 1),
+      metric: "cpu"
+    )
+  }
 
   public mutating func collect(now: Date) -> [ProcessSample] {
     let current = Self.enumerate()
@@ -51,6 +79,7 @@ public struct ProcessCollector {
     let elapsed = now.timeIntervalSince(previousNow)
     let processors = max(ProcessInfo.processInfo.processorCount, 1)
     var samples: [ProcessSample] = []
+    var systemBusy: UInt64 = 0
     for (pid, usage) in current.usages {
       guard let previous = previousUsage[pid],
         let identity = current.identities[pid],
@@ -63,6 +92,7 @@ public struct ProcessCollector {
       else {
         continue
       }
+      systemBusy &+= (usage.user &- previous.user) &+ (usage.system &- previous.system)
       let parent = current.parents[pid].flatMap { $0 > 0 ? String($0) : nil }
       samples.append(
         ProcessSample(
@@ -73,6 +103,9 @@ public struct ProcessCollector {
         )
       )
     }
+    lastSystemBusyNanos = systemBusy
+    lastSystemElapsed = elapsed
+    lastSystemTime = now
     return samples.sorted { $0.process.id < $1.process.id }
   }
 

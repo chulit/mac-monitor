@@ -1,4 +1,3 @@
-import Charts
 import SwiftUI
 import MonitoringEngine
 
@@ -72,16 +71,7 @@ struct PopoverView: View {
         Text(title).font(.caption).foregroundStyle(.secondary)
       }
       Text(value).font(.title3.bold().monospacedDigit())
-      Chart(history, id: \.date) { point in
-        AreaMark(x: .value("Time", point.date), y: .value(title, point.value))
-          .foregroundStyle(tint.gradient.opacity(0.35))
-        LineMark(x: .value("Time", point.date), y: .value(title, point.value))
-          .foregroundStyle(tint)
-      }
-      .chartYScale(domain: chartDomain(values: history.map(\.value)))
-      .chartXAxis(.hidden)
-      .chartYAxis(.hidden)
-      .frame(height: 28)
+      Sparkline(values: history, tint: tint)
     }
     .padding(8)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -306,13 +296,5 @@ struct PopoverView: View {
     case "High-detail investigation": return .blue
     default: return .green
     }
-  }
-
-  private func sparkDomain(values: [Double]) -> ClosedRange<Double> {
-    guard let lo = values.min(), let hi = values.max(), hi > lo else {
-      return 0...1
-    }
-    let padding = max((hi - lo) * 0.25, 0.02)
-    return max(0, lo - padding)...(hi + padding)
   }
 }
