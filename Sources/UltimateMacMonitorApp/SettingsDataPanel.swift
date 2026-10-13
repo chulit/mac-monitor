@@ -81,37 +81,14 @@ struct SettingsDataPanel: View {
     let selected = days == -1
       ? !retentionOptions.contains(viewModel.current.retentionDays)
       : viewModel.current.retentionDays == days
-    return Button {
-      if days == -1 {
-        viewModel.update(\.retentionDays, to: 14)
-      } else {
-        viewModel.update(\.retentionDays, to: days)
+    return SettingsOptionBox(
+      title: title,
+      subtitle: subtitle,
+      selected: selected,
+      action: {
+        viewModel.update(\.retentionDays, to: days == -1 ? 14 : days)
       }
-    } label: {
-      VStack(alignment: .leading, spacing: 2) {
-        HStack(spacing: 6) {
-          Image(systemName: selected ? "largecircle.fill.circle" : "circle")
-            .foregroundStyle(selected ? Color.accentColor : .secondary)
-          Text(title)
-            .font(.callout.bold())
-        }
-        Text(subtitle)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-      .padding(10)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(
-        selected ? Color.accentColor.opacity(0.08) : Color.secondary.opacity(0.05),
-        in: RoundedRectangle(cornerRadius: 10)
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: 10)
-          .stroke(selected ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 1)
-      )
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel("\(title) retention")
+    )
   }
 
   private var storageUsageCard: some View {

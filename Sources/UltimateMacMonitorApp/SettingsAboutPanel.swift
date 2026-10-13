@@ -132,21 +132,30 @@ struct SettingsAboutPanel: View {
   }
 
   private var whatsNewCard: some View {
-    SettingsCard(title: "What's New") {
-      VStack(alignment: .leading, spacing: 8) {
-        changelogEntry(
-          version: "v0.1.0",
-          date: "In development",
-          items: [
-            "App Utama modules: Overview, Processes, Incidents, History, and Settings.",
-            "Retention-backed history with per-module pull requests.",
-            "Incident package export and share workflow.",
-            "Live settings: alert thresholds, sampling cadences, retention, and appearance.",
-          ],
-          current: true
-        )
+    VStack(alignment: .leading, spacing: 8) {
+      HStack {
+        Text("What's New")
+          .font(.headline)
+        Spacer()
+        Button("View All Updates >") {
+          NSWorkspace.shared.open(SystemInfo.releasesURL)
+        }
+        .buttonStyle(.link)
+        .font(.callout)
       }
+      changelogEntry(
+        version: "v0.1.0",
+        date: "In development",
+        items: [
+          "App Utama modules: Overview, Processes, Incidents, History, and Settings.",
+          "Retention-backed history with per-module pull requests.",
+          "Incident package export and share workflow.",
+          "Live settings: alert thresholds, sampling cadences, retention, and appearance.",
+        ],
+        current: true
+      )
     }
+    .dashboardCardStyle()
   }
 
   private func changelogEntry(

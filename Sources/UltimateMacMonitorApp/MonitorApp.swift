@@ -9,8 +9,7 @@ struct MonitorApp: App {
     WindowGroup {
       RootView(
         controller: controller,
-        store: delegate.navigation,
-        onOpenSettings: { delegate.openSettings() }
+        store: delegate.navigation
       )
       .onAppear {
         delegate.bind(controller)

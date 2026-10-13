@@ -8,11 +8,20 @@ import UserNotifications
 /// can react to them. The store stays UI-free; this is the reactive bridge.
 struct AppearanceSnapshot: Equatable {
   var theme: AppTheme
-  var accentColor: String
+  var accentColor: AccentColorName
   var density: InterfaceDensity
   var showSidebarLabels: Bool
   var compactSidebar: Bool
   var reduceMotion: Bool
+
+  init(settings: MonitorSettings) {
+    self.theme = settings.theme
+    self.accentColor = settings.accentColor
+    self.density = settings.density
+    self.showSidebarLabels = settings.showSidebarLabels
+    self.compactSidebar = settings.compactSidebar
+    self.reduceMotion = settings.reduceMotion
+  }
 }
 
 /// Owns the engine and its collectors, publishing each evaluation.
@@ -37,14 +46,7 @@ final class EngineController: ObservableObject {
   @Published private(set) var storageQuota = 150_000_000
   @Published private(set) var notices: [Notice] = []
   /// Mirrored appearance settings so views react without observing the store.
-  @Published private(set) var appearance = AppearanceSnapshot(
-    theme: .auto,
-    accentColor: "blue",
-    density: .default,
-    showSidebarLabels: true,
-    compactSidebar: false,
-    reduceMotion: false
-  )
+  @Published private(set) var appearance = AppearanceSnapshot(settings: .ship07Defaults)
 
   private var pipeline: Pipeline<SystemClock>
   private var host: HostCollector<SystemClock>
@@ -117,15 +119,9 @@ final class EngineController: ObservableObject {
     )
     pipeline.setHistoryRecording(historyRecording(for: store.settings))
     pipeline.updateBudgetLimit(store.settings.maxCPU)
+    pipeline.updateCriticalMetrics(criticalMetrics(for: store.settings))
     AppLog.isEnabled = store.settings.storeLogs
-    appearance = AppearanceSnapshot(
-      theme: store.settings.theme,
-      accentColor: store.settings.accentColor,
-      density: store.settings.density,
-      showSidebarLabels: store.settings.showSidebarLabels,
-      compactSidebar: store.settings.compactSidebar,
-      reduceMotion: store.settings.reduceMotion
-    )
+    appearance = AppearanceSnapshot(settings: store.settings)
     host = HostCollector(clock: clock)
     store.addChangeHandler { [weak self] newSettings in
       Task { @MainActor in
@@ -143,6 +139,11 @@ final class EngineController: ObservableObject {
       recording.insert(.incidents)
     }
     return recording
+  }
+
+  /// Metrics exempt from observation degradation: only monitored ones.
+  private func criticalMetrics(for settings: MonitorSettings) -> Set<String> {
+    settings.isMonitored("cpu") ? ["cpu"] : []
   }
 
   /// Starts collection at the cadence chosen in settings.
@@ -172,12 +173,13 @@ final class EngineController: ObservableObject {
   }
 
   func requestHighDetail(seconds: TimeInterval) {
+    pipeline.requestHighDetail(duration: seconds)
+  }
 
   /// Identity token binding a process to its start time, for the safe
   /// termination flow: a reused PID never matches a stale token.
   func processIdentity(for process: Process) -> ProcessIdentity? {
     processCollector.identity(for: process)
-  }    pipeline.requestHighDetail(duration: seconds)
   }
 
   /// Ends the high-detail session early (Stop Investigation button).
@@ -225,15 +227,10 @@ final class EngineController: ObservableObject {
     pipeline.updateRetention(detailRetention: Double(newSettings.retentionDays) * 86_400)
     pipeline.setHistoryRecording(historyRecording(for: newSettings))
     pipeline.updateBudgetLimit(newSettings.maxCPU)
+    pipeline.updateCriticalMetrics(criticalMetrics(for: newSettings))
     AppLog.isEnabled = newSettings.storeLogs
-    appearance = AppearanceSnapshot(
-      theme: newSettings.theme,
-      accentColor: newSettings.accentColor,
-      density: newSettings.density,
-      showSidebarLabels: newSettings.showSidebarLabels,
-      compactSidebar: newSettings.compactSidebar,
-      reduceMotion: newSettings.reduceMotion
-    )
+    appearance = AppearanceSnapshot(settings: newSettings)
+    updateDockBadge()
   }
 
   private func tick() {
@@ -306,7 +303,6 @@ final class EngineController: ObservableObject {
     var samples: [Sample] = []
     func due(_ metric: String) -> Bool {
       metricIsDue(
-        metric: metric,
         lastFire: lastMetricFire[metric],
         now: now,
         interval: stored.metricIntervals[metric] ?? 1,
@@ -346,16 +342,18 @@ final class EngineController: ObservableObject {
     let fresh = notifier.update(evaluation, now: now)
     let stored = settings.settings
     guard stored.notificationsEnabled else {
+      // The badge must clear even when nothing is delivered.
+      updateDockBadge()
       return []
     }
     let deliverable = fresh.filter { notice in
       guard let metric = metricForNotice(notice, in: evaluation) else {
         return true
       }
-      guard let typeID = alertTypeID(forMetric: metric) else {
+      guard let type = alertTypeID(forMetric: metric) else {
         return true
       }
-      return stored.isAlertTypeEnabled(typeID)
+      return stored.isAlertTypeEnabled(type)
     }
     deliver(deliverable)
     return deliverable
@@ -373,17 +371,14 @@ final class EngineController: ObservableObject {
 
   private func deliver(_ notices: [Notice]) {
     let stored = settings.settings
-    guard !notices.isEmpty else {
-      updateDockBadge()
-      return
-    }
     if stored.macOSNotifications {
       requestNotificationAuthorizationIfNeeded()
       for notice in notices {
         postMacOSNotification(notice)
       }
     }
-    if stored.alertSound {
+    // Sound is for critical alerts only: high-severity notices.
+    if stored.alertSound, notices.contains(where: { $0.severity == .high }) {
       NSSound(named: "Glass")?.play()
     }
     updateDockBadge()
@@ -413,7 +408,7 @@ final class EngineController: ObservableObject {
   }
 
   private func updateDockBadge() {
-    guard settings.settings.dockBadge else {
+    guard settings.settings.notificationsEnabled, settings.settings.dockBadge else {
       NSApplication.shared.dockTile.badgeLabel = nil
       return
     }
@@ -424,6 +419,12 @@ final class EngineController: ObservableObject {
   /// Whether the collection timer is running (Settings → Permissions).
   var isCollecting: Bool {
     timer != nil
+  }
+
+  /// Privacy setting shortcut: hides process names and file paths in
+  /// exports and screenshots.
+  var hidesSensitiveInfo: Bool {
+    settings.settings.hideSensitiveInfo
   }
 
   /// Drops all recorded history (Settings → Clear History).

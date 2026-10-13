@@ -56,12 +56,12 @@ final class SettingsViewModel: ObservableObject {
     errorMessage = nil
   }
 
-  func toggleAlertType(_ id: String) {
+  func toggleAlertType(_ type: AlertType) {
     var enabled = current.enabledAlertTypes
-    if enabled.contains(id) {
-      enabled.remove(id)
+    if enabled.contains(type) {
+      enabled.remove(type)
     } else {
-      enabled.insert(id)
+      enabled.insert(type)
     }
     store.update(\.enabledAlertTypes, to: enabled)
     errorMessage = nil

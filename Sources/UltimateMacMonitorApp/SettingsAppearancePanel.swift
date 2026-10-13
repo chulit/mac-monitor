@@ -7,17 +7,6 @@ import SwiftUI
 struct SettingsAppearancePanel: View {
   @ObservedObject var viewModel: SettingsViewModel
 
-  private let accents: [(name: String, color: Color?)] = [
-    ("blue", .blue),
-    ("purple", .purple),
-    ("pink", .pink),
-    ("orange", .orange),
-    ("yellow", .yellow),
-    ("green", .green),
-    ("cyan", .cyan),
-    ("multicolor", nil),
-  ]
-
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       themeCard
@@ -28,6 +17,45 @@ struct SettingsAppearancePanel: View {
     }
   }
 
+  private var accentCard: some View {
+    SettingsCard(
+      title: "Accent Color",
+      subtitle: "Choose an accent color for highlights and charts."
+    ) {
+      HStack(spacing: 10) {
+        ForEach(AccentColorName.allCases, id: \.self) { accent in
+          Button {
+            viewModel.update(\.accentColor, to: accent)
+          } label: {
+            ZStack {
+              if let color = accent.swiftUIColor {
+                Circle()
+                  .fill(color)
+                  .frame(width: 28, height: 28)
+              } else {
+                Circle()
+                  .fill(
+                    AngularGradient(
+                      colors: [.red, .orange, .yellow, .green, .blue, .purple, .red],
+                      center: .center
+                    )
+                  )
+                  .frame(width: 28, height: 28)
+              }
+              if viewModel.current.accentColor == accent {
+                Circle()
+                  .stroke(Color.primary, lineWidth: 2)
+                  .frame(width: 34, height: 34)
+              }
+            }
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("\(accent.rawValue) accent color")
+        }
+      }
+    }
+  }
+
   private var themeCard: some View {
     SettingsCard(
       title: "Theme",
@@ -35,41 +63,13 @@ struct SettingsAppearancePanel: View {
     ) {
       HStack(spacing: 8) {
         ForEach(AppTheme.allCases, id: \.self) { theme in
-          Button {
-            viewModel.update(\.theme, to: theme)
-          } label: {
-            VStack(spacing: 6) {
-              themePreview(for: theme)
-              HStack(spacing: 6) {
-                Image(
-                  systemName: viewModel.current.theme == theme
-                    ? "largecircle.fill.circle" : "circle"
-                )
-                .foregroundStyle(
-                  viewModel.current.theme == theme ? Color.accentColor : .secondary
-                )
-                Text(theme.title)
-                  .font(.callout)
-              }
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity)
-            .background(
-              viewModel.current.theme == theme
-                ? Color.accentColor.opacity(0.08) : Color.secondary.opacity(0.05),
-              in: RoundedRectangle(cornerRadius: 10)
-            )
-            .overlay(
-              RoundedRectangle(cornerRadius: 10)
-                .stroke(
-                  viewModel.current.theme == theme
-                    ? Color.accentColor.opacity(0.5) : Color.clear,
-                  lineWidth: 1
-                )
-            )
+          SettingsOptionBox(
+            title: theme.title,
+            selected: viewModel.current.theme == theme,
+            action: { viewModel.update(\.theme, to: theme) }
+          ) {
+            themePreview(for: theme)
           }
-          .buttonStyle(.plain)
-          .accessibilityLabel("\(theme.title) theme")
         }
       }
     }
@@ -114,45 +114,6 @@ struct SettingsAppearancePanel: View {
     )
   }
 
-  private var accentCard: some View {
-    SettingsCard(
-      title: "Accent Color",
-      subtitle: "Choose an accent color for highlights and charts."
-    ) {
-      HStack(spacing: 10) {
-        ForEach(accents, id: \.name) { accent in
-          Button {
-            viewModel.update(\.accentColor, to: accent.name)
-          } label: {
-            ZStack {
-              if let color = accent.color {
-                Circle()
-                  .fill(color)
-                  .frame(width: 28, height: 28)
-              } else {
-                Circle()
-                  .fill(
-                    AngularGradient(
-                      colors: [.red, .orange, .yellow, .green, .blue, .purple, .red],
-                      center: .center
-                    )
-                  )
-                  .frame(width: 28, height: 28)
-              }
-              if viewModel.current.accentColor == accent.name {
-                Circle()
-                  .stroke(Color.primary, lineWidth: 2)
-                  .frame(width: 34, height: 34)
-              }
-            }
-          }
-          .buttonStyle(.plain)
-          .accessibilityLabel("\(accent.name) accent color")
-        }
-      }
-    }
-  }
-
   private var densityCard: some View {
     SettingsCard(
       title: "Interface Density",
@@ -160,48 +121,20 @@ struct SettingsAppearancePanel: View {
     ) {
       HStack(spacing: 8) {
         ForEach(InterfaceDensity.allCases, id: \.self) { density in
-          Button {
-            viewModel.update(\.density, to: density)
-          } label: {
-            VStack(alignment: .leading, spacing: 6) {
-              VStack(spacing: 3) {
-                ForEach(0..<3, id: \.self) { _ in
-                  RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(height: density == .compact ? 6 : density == .spacious ? 12 : 9)
-                }
-              }
-              .frame(height: 40)
-              HStack(spacing: 6) {
-                Image(
-                  systemName: viewModel.current.density == density
-                    ? "largecircle.fill.circle" : "circle"
-                )
-                .foregroundStyle(
-                  viewModel.current.density == density ? Color.accentColor : .secondary
-                )
-                Text(density.title)
-                  .font(.callout)
+          SettingsOptionBox(
+            title: density.title,
+            selected: viewModel.current.density == density,
+            action: { viewModel.update(\.density, to: density) }
+          ) {
+            VStack(spacing: 3) {
+              ForEach(0..<3, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: 2)
+                  .fill(Color.gray.opacity(0.3))
+                  .frame(height: density == .compact ? 6 : density == .spacious ? 12 : 9)
               }
             }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-              viewModel.current.density == density
-                ? Color.accentColor.opacity(0.08) : Color.secondary.opacity(0.05),
-              in: RoundedRectangle(cornerRadius: 10)
-            )
-            .overlay(
-              RoundedRectangle(cornerRadius: 10)
-                .stroke(
-                  viewModel.current.density == density
-                    ? Color.accentColor.opacity(0.5) : Color.clear,
-                  lineWidth: 1
-                )
-            )
+            .frame(height: 40)
           }
-          .buttonStyle(.plain)
-          .accessibilityLabel("\(density.title) density")
         }
       }
     }

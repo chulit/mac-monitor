@@ -10,8 +10,8 @@ struct SettingsGeneralPanel: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       appBehaviorCard
-      monitoringModeCard(viewModel: viewModel)
-      resourceLimitsCard(viewModel: viewModel)
+      MonitoringModeSelector(viewModel: viewModel)
+      ResourceLimitsSliders(viewModel: viewModel)
       resetCard
       if let error = viewModel.errorMessage {
         Text(error)
@@ -97,107 +97,82 @@ struct SettingsGeneralPanel: View {
   }
 }
 
-/// Monitoring mode selector boxes, shared by the General and Monitoring panels.
-func monitoringModeCard(viewModel: SettingsViewModel) -> some View {
-  SettingsCard(title: "Monitoring Mode") {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 8) {
-        ForEach(MonitoringMode.allCases, id: \.self) { mode in
-          Button {
-            viewModel.setMonitoringMode(mode)
-          } label: {
-            VStack(alignment: .leading, spacing: 4) {
-              HStack(spacing: 6) {
-                Image(
-                  systemName: viewModel.current.monitoringMode == mode
-                    ? "largecircle.fill.circle" : "circle"
-                )
-                .foregroundStyle(
-                  viewModel.current.monitoringMode == mode ? Color.accentColor : .secondary
-                )
-                Text(mode.title)
-                  .font(.callout.bold())
-              }
-              Text(mode.subtitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text(MonitorSettings.label(for: mode.samplingInterval))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-              viewModel.current.monitoringMode == mode
-                ? Color.accentColor.opacity(0.08) : Color.secondary.opacity(0.05),
-              in: RoundedRectangle(cornerRadius: 10)
-            )
-            .overlay(
-              RoundedRectangle(cornerRadius: 10)
-                .stroke(
-                  viewModel.current.monitoringMode == mode
-                    ? Color.accentColor.opacity(0.5) : Color.clear,
-                  lineWidth: 1
-                )
+/// Monitoring mode selector, shared by the General and Monitoring panels.
+struct MonitoringModeSelector: View {
+  @ObservedObject var viewModel: SettingsViewModel
+
+  var body: some View {
+    SettingsCard(title: "Monitoring Mode") {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 8) {
+          ForEach(MonitoringMode.allCases, id: \.self) { mode in
+            SettingsOptionBox(
+              title: mode.title,
+              subtitle: mode.subtitle,
+              detail: MonitorSettings.label(for: mode.samplingInterval),
+              selected: viewModel.current.monitoringMode == mode,
+              action: { viewModel.setMonitoringMode(mode) }
             )
           }
-          .buttonStyle(.plain)
-          .accessibilityLabel("\(mode.title) monitoring mode")
         }
+        Text("Collection restarts at the new cadence immediately.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
-      Text("Collection restarts at the new cadence immediately.")
-        .font(.caption)
-        .foregroundStyle(.secondary)
     }
   }
 }
 
 /// Resource limit sliders, shared by the General and Monitoring panels.
-func resourceLimitsCard(viewModel: SettingsViewModel) -> some View {
-  SettingsCard(
-    title: "Resource Limits",
-    subtitle: "Set limits to keep monitoring lightweight."
-  ) {
-    VStack(spacing: 12) {
-      HStack(spacing: 12) {
-        SettingsIcon(systemName: "cpu", tint: .blue)
-        VStack(alignment: .leading, spacing: 2) {
-          Text("Max CPU Usage")
-            .font(.callout)
-          Text("Monitoring degrades to reduced sampling past this budget.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+struct ResourceLimitsSliders: View {
+  @ObservedObject var viewModel: SettingsViewModel
+
+  var body: some View {
+    SettingsCard(
+      title: "Resource Limits",
+      subtitle: "Set limits to keep monitoring lightweight."
+    ) {
+      VStack(spacing: 12) {
+        HStack(spacing: 12) {
+          SettingsIcon(systemName: "cpu", tint: .blue)
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Max CPU Usage")
+              .font(.callout)
+            Text("Monitoring degrades to reduced sampling past this budget.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          Spacer()
+          Slider(
+            value: viewModel.binding(\.maxCPU),
+            in: 0.01...0.20,
+            step: 0.01
+          )
+          .frame(width: 180)
+          Text("\(Int((viewModel.current.maxCPU * 100).rounded()))%")
+            .font(.callout.monospacedDigit())
+            .frame(width: 44, alignment: .trailing)
         }
-        Spacer()
-        Slider(
-          value: viewModel.binding(\.maxCPU),
-          in: 0.01...0.20,
-          step: 0.01
-        )
-        .frame(width: 180)
-        Text("\(Int((viewModel.current.maxCPU * 100).rounded()))%")
-          .font(.callout.monospacedDigit())
-          .frame(width: 44, alignment: .trailing)
-      }
-      HStack(spacing: 12) {
-        SettingsIcon(systemName: "memorychip", tint: .purple)
-        VStack(alignment: .leading, spacing: 2) {
-          Text("Max Memory Usage")
-            .font(.callout)
-          Text("Not enforced yet — stored as a preference.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+          SettingsIcon(systemName: "memorychip", tint: .purple)
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Max Memory Usage")
+              .font(.callout)
+            Text("Not enforced yet \u2014 stored as a preference.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          Spacer()
+          Slider(
+            value: viewModel.binding(\.maxMemoryMB),
+            in: 100...2000,
+            step: 50
+          )
+          .frame(width: 180)
+          Text("\(Int(viewModel.current.maxMemoryMB)) MB")
+            .font(.callout.monospacedDigit())
+            .frame(width: 64, alignment: .trailing)
         }
-        Spacer()
-        Slider(
-          value: viewModel.binding(\.maxMemoryMB),
-          in: 100...2000,
-          step: 50
-        )
-        .frame(width: 180)
-        Text("\(Int(viewModel.current.maxMemoryMB)) MB")
-          .font(.callout.monospacedDigit())
-          .frame(width: 64, alignment: .trailing)
       }
     }
   }

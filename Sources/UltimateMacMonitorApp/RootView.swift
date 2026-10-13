@@ -6,7 +6,6 @@ import SwiftUI
 struct RootView: View {
   @ObservedObject var controller: EngineController
   @ObservedObject var store: NavigationStore
-  var onOpenSettings: () -> Void = {}
 
   var body: some View {
     settingsThemed(splitView)
@@ -55,7 +54,7 @@ struct RootView: View {
     let themed = content
       .preferredColorScheme(themeScheme)
       .controlSize(densityControlSize)
-    if let accent = accentColor(for: controller.appearance.accentColor) {
+    if let accent = controller.appearance.accentColor.swiftUIColor {
       themed.tint(accent)
     } else {
       themed
@@ -75,19 +74,6 @@ struct RootView: View {
     case .default: return .regular
     case .compact: return .small
     case .spacious: return .large
-    }
-  }
-
-  private func accentColor(for name: String) -> Color? {
-    switch name {
-    case "blue": return .blue
-    case "purple": return .purple
-    case "pink": return .pink
-    case "orange": return .orange
-    case "yellow": return .yellow
-    case "green": return .green
-    case "cyan": return .cyan
-    default: return nil
     }
   }
 
