@@ -24,6 +24,17 @@ public enum OverviewTimeRange: String, CaseIterable, Sendable {
     }
   }
 
+  /// Short duration phrase for sentences, e.g. "over the last 15 minutes".
+  public var label: String {
+    switch self {
+    case .fifteenMinutes: return "15 minutes"
+    case .thirtyMinutes: return "30 minutes"
+    case .oneHour: return "1 hour"
+    case .sixHours: return "6 hours"
+    case .twentyFourHours: return "24 hours"
+    }
+  }
+
   public var seconds: TimeInterval {
     switch self {
     case .fifteenMinutes: return 900
