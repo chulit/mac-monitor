@@ -26,7 +26,7 @@ struct PopoverView: View {
       actionRow
     }
     .padding(14)
-    .frame(width: 560)
+    .frame(width: 640)
   }
 
   private var header: some View {
@@ -51,10 +51,10 @@ struct PopoverView: View {
 
   private var cards: some View {
     HStack(spacing: 10) {
-      metricCard(title: "CPU", icon: "cpu", tint: .blue, value: percent(controller.cpuShare), history: controller.cpuHistory, scaled: true)
-      metricCard(title: "Memory", icon: "memorychip", tint: .purple, value: percent(controller.memoryHistory.last?.value), history: controller.memoryHistory, scaled: true)
-      metricCard(title: "Disk", icon: "internaldrive", tint: .green, value: percent(controller.diskHistory.last?.value), history: controller.diskHistory, scaled: true)
-      metricCard(title: "Network", icon: "arrow.up.arrow.down", tint: .blue, value: rate(controller.networkHistory.last?.value), history: controller.networkHistory, scaled: false)
+      metricCard(title: "CPU", icon: "cpu", tint: .blue, value: percent(controller.cpuShare), history: controller.cpuHistory)
+      metricCard(title: "Memory", icon: "memorychip", tint: .purple, value: percent(controller.memoryHistory.last?.value), history: controller.memoryHistory)
+      metricCard(title: "Disk", icon: "internaldrive", tint: .green, value: percent(controller.diskHistory.last?.value), history: controller.diskHistory)
+      metricCard(title: "Network", icon: "arrow.up.arrow.down", tint: .blue, value: rate(controller.networkHistory.last?.value), history: controller.networkHistory)
       temperatureCard
     }
   }
@@ -64,8 +64,7 @@ struct PopoverView: View {
     icon: String,
     tint: Color,
     value: String,
-    history: [(date: Date, value: Double)],
-    scaled: Bool
+    history: [(date: Date, value: Double)]
   ) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       HStack(spacing: 4) {
@@ -79,7 +78,7 @@ struct PopoverView: View {
         LineMark(x: .value("Time", point.date), y: .value(title, point.value))
           .foregroundStyle(tint)
       }
-      .chartYScale(domain: scaled ? 0...1 : sparkDomain(values: history.map(\.value)))
+      .chartYScale(domain: chartDomain(values: history.map(\.value)))
       .chartXAxis(.hidden)
       .chartYAxis(.hidden)
       .frame(height: 28)
@@ -97,8 +96,7 @@ struct PopoverView: View {
           icon: "thermometer",
           tint: .orange,
           value: "\(Int(last.value.rounded()))°",
-          history: controller.temperatureHistory,
-          scaled: false
+          history: controller.temperatureHistory
         )
       } else {
         VStack(alignment: .leading, spacing: 4) {

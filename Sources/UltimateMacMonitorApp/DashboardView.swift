@@ -176,10 +176,6 @@ struct DashboardView: View {
   }
 
   private func sparkDomain(values: [Double]) -> ClosedRange<Double> {
-    guard let lo = values.min(), let hi = values.max(), hi > lo else {
-      return 0...1
-    }
-    let padding = max((hi - lo) * 0.25, 0.02)
-    return max(0, lo - padding)...min(1, hi + padding)
+    chartDomain(values: values)
   }
 }

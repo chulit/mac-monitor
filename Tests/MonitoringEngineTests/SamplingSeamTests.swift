@@ -2250,6 +2250,16 @@ struct SamplingSeamTests {
     }
   }
 
+  @Test("Chart domains pad varying data and center constant data")
+  func chartDomainsAdapt() {
+    let varied = chartDomain(values: [0.25, 0.75])
+    #expect(varied == 0.125...0.875)
+    #expect(chartDomain(values: []) == 0...1)
+    let flat = chartDomain(values: [1.0, 1.0])
+    #expect(abs(flat.lowerBound - 0.9) < 1e-9)
+    #expect(abs(flat.upperBound - 1.0) < 1e-9)
+  }
+
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in
       let critical = criticalRanges.contains { $0.contains(index) }
       return Sample(

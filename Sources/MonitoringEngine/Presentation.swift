@@ -333,6 +333,19 @@ public func formatRate(_ bytesPerSecond: Double) -> String {
   return String(format: "%.1f MB/s", bytesPerSecond / 1_048_576)
 }
 
+/// Y-domain for live sparklines: pads varying data, centers constant data
+/// so flat readings render as a band instead of a line glued to an edge.
+public func chartDomain(values: [Double]) -> ClosedRange<Double> {
+  guard let lo = values.min(), let hi = values.max() else {
+    return 0...1
+  }
+  if hi > lo {
+    let padding = max((hi - lo) * 0.25, 0.02)
+    return max(0, lo - padding)...min(1, hi + padding)
+  }
+  return max(0, lo - 0.1)...min(1, hi + 0.1)
+}
+
 public func makeExplanation(_ timeline: IncidentTimeline) -> Explanation {
   let incident = timeline.incident
   var facts: [String] = []
