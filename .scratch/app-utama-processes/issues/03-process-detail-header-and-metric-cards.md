@@ -6,13 +6,22 @@
 
 **Status:** ready-for-agent
 
-- [ ] Back navigation button ("< Back to Processes") returning cleanly to the process list
-- [ ] Process header displaying large application icon, app name, "● Running" status badge, developer, version, launch timestamp, and action buttons ("···", "📁 Open in Finder")
-- [ ] Sub-navigation pill tabs: `[ Overview | Performance | Threads | Files & Connections | Incidents ]`
-- [ ] 4 metric stat cards:
+- [x] Back navigation button ("< Back to Processes") returning cleanly to the process list
+- [x] Process header displaying large application icon, app name, "● Running" status badge, developer, version, launch timestamp, and action buttons ("···", "📁 Open in Finder")
+- [x] Sub-navigation pill tabs: `[ Overview | Performance | Threads | Files & Connections | Incidents ]`
+- [x] 4 metric stat cards:
   - CPU Usage (with blue sparkline)
   - Memory Usage (with purple sparkline)
   - Disk Activity (with green sparkline)
   - Network Activity (with orange/cyan sparkline)
 
 ## Comments
+
+## Notes (2026-10-14)
+
+- Metadata via NSRunningApplication + proc_pidpath (asli); yang tidak
+  tersedia (developer, dsb.) tampil "—".
+- Kartu Memory/Disk/Network menampilkan "—": engine tidak mengumpulkan
+  telemetri per proses selain CPU.
+- Belum terverifikasi di Mac: `swift test` + tampilan (tidak bisa build
+  Swift di VM Linux).

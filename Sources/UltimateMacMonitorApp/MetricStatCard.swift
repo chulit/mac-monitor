@@ -11,7 +11,7 @@ struct MetricStatCard: View {
   var valueText: String
   var history: [(date: Date, value: Double)]
   /// Relative baseline deviation while investigating; nil hides the badge.
-  var delta: Double?
+  var delta: Double? = nil
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {

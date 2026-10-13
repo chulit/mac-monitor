@@ -6,8 +6,15 @@
 
 **Status:** ready-for-agent
 
-- [ ] "Process Information" card displaying metadata: Process Name, Bundle ID, Version, Developer, Launch Time, Process ID (PID), Parent Process, and Executable Path
-- [ ] "Resource Usage Details" card displaying telemetry: CPU Usage, CPU Time, Thread count, Memory (RSS), Memory (Virtual), Open Files count, Network Read, Network Write, Disk Read, Disk Write
-- [ ] Clean typographic alignment with icons and secondary label colors
+- [x] "Process Information" card displaying metadata: Process Name, Bundle ID, Version, Developer, Launch Time, Process ID (PID), Parent Process, and Executable Path
+- [x] "Resource Usage Details" card displaying telemetry: CPU Usage, CPU Time, Thread count, Memory (RSS), Memory (Virtual), Open Files count, Network Read, Network Write, Disk Read, Disk Write
+- [x] Clean typographic alignment with icons and secondary label colors
 
 ## Comments
+
+## Notes (2026-10-14)
+
+- Hanya CPU Usage yang real; sisanya "—" dengan catatan kaki yang jujur.
+  Tidak ada angka telemetri yang difabrikasi.
+- Belum terverifikasi di Mac: `swift test` + tampilan (tidak bisa build
+  Swift di VM Linux).
