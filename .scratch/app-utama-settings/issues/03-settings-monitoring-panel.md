@@ -7,7 +7,8 @@
 **Status:** ready-for-agent
 
 - [x] "Monitoring Mode" selector cards with descriptions (Normal, Reduced, High Detail)
-- [x] "Sampling Intervals" card with Custom dropdown and individual metric interval sliders:
+- [x] "Sampling Intervals" card with preset buttons (Balanced/High Detail/Low Overhead) and individual metric interval sliders:
+  - Deviasi dari mock: bukan "Custom dropdown" — preset buttons + slider per metrik sudah mencakup fungsi custom.
   - CPU (1 second)
   - Memory (2 seconds)
   - Disk (5 seconds)

@@ -36,7 +36,7 @@ struct SettingsCenterTests {
     #expect(s.thresholdDisk == 0.90)
     #expect(s.retentionDays == 30)
     #expect(s.theme == .auto)
-    #expect(s.accentColor == "blue")
+    #expect(s.accentColor == .blue)
     #expect(s.density == .default)
     #expect(s.showSidebarLabels == true)
     #expect(s.compactSidebar == false)
@@ -46,7 +46,7 @@ struct SettingsCenterTests {
     #expect(s.hideSensitiveInfo == false)
     #expect(s.metricIntervals["cpu"] == 1)
     #expect(s.isMonitored("cpu") == true)
-    #expect(s.isAlertTypeEnabled(AlertType.highCPU.rawValue) == true)
+    #expect(s.isAlertTypeEnabled(.highCPU) == true)
   }
 
   @Test("Generic update persists and notifies")
@@ -94,25 +94,41 @@ struct SettingsCenterTests {
     #expect(store.settings == MonitorSettings.ship07Defaults)
   }
 
+  @Test("New enum-typed settings decode from their string forms")
+  func enumSettingsDecodeFromStrings() throws {
+    let defaults = freshDefaults()
+    let json = """
+      {"launchAtLogin":false,"samplingInterval":1.0,"accentColor":"purple",
+       "theme":"dark","density":"compact",
+       "enabledAlertTypes":["highCPU","highDisk"]}
+      """.data(using: .utf8)!
+    defaults.set(json, forKey: "com.ultimatemacmonitor.settings")
+    let store = SettingsStore(userDefaults: defaults, loginItems: FakeLoginItems())
+    #expect(store.settings.accentColor == .purple)
+    #expect(store.settings.theme == .dark)
+    #expect(store.settings.density == .compact)
+    #expect(store.settings.enabledAlertTypes == [.highCPU, .highDisk])
+  }
+
   @Test("metricIsDue gates on enablement and cadence")
   func metricDue() {
     let now = Date(timeIntervalSince1970: 1_000)
-    #expect(metricIsDue(metric: "cpu", lastFire: nil, now: now, interval: 5, enabled: true) == true)
-    #expect(metricIsDue(metric: "cpu", lastFire: nil, now: now, interval: 5, enabled: false) == false)
+    #expect(metricIsDue(lastFire: nil, now: now, interval: 5, enabled: true) == true)
+    #expect(metricIsDue(lastFire: nil, now: now, interval: 5, enabled: false) == false)
     #expect(metricIsDue(
-      metric: "cpu", lastFire: now.addingTimeInterval(-3), now: now, interval: 5, enabled: true
+      lastFire: now.addingTimeInterval(-3), now: now, interval: 5, enabled: true
     ) == false)
     #expect(metricIsDue(
-      metric: "cpu", lastFire: now.addingTimeInterval(-5), now: now, interval: 5, enabled: true
+      lastFire: now.addingTimeInterval(-5), now: now, interval: 5, enabled: true
     ) == true)
   }
 
   @Test("alertTypeID maps metrics to alert types")
   func alertTypeMapping() {
-    #expect(alertTypeID(forMetric: "cpu") == AlertType.highCPU.rawValue)
-    #expect(alertTypeID(forMetric: "memory") == AlertType.highMemory.rawValue)
-    #expect(alertTypeID(forMetric: "network") == AlertType.networkActivity.rawValue)
-    #expect(alertTypeID(forMetric: "temperature") == AlertType.highTemperature.rawValue)
+    #expect(alertTypeID(forMetric: "cpu") == .highCPU)
+    #expect(alertTypeID(forMetric: "memory") == .highMemory)
+    #expect(alertTypeID(forMetric: "network") == .networkActivity)
+    #expect(alertTypeID(forMetric: "temperature") == .highTemperature)
     #expect(alertTypeID(forMetric: nil) == nil)
     #expect(alertTypeID(forMetric: "unknown-metric") == nil)
   }
@@ -183,5 +199,55 @@ struct SettingsCenterTests {
     pipeline.setHistoryRecording(.metricsAndIncidents)
     pipeline.evaluate(stream(value: 0.2, count: 10, from: now.addingTimeInterval(20)))
     #expect(pipeline.history?.details.isEmpty == false)
+  }
+
+  @Test("Updating critical metrics changes degradation live")
+  func criticalMetricsUpdate() {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let policy = ObservationPolicy(
+      budgetLimit: 1.0,
+      criticalMetrics: ["cpu"],
+      normalInterval: 1.0,
+      reducedInterval: 5.0,
+      highDetailInterval: 0.5,
+      overBudgetEvaluationsToDegrade: 2,
+      underBudgetEvaluationsToRecover: 2,
+      maximumHighDetailDuration: 60,
+      highDetailWarningBeforeEnd: 10
+    )
+    let pipeline = Pipeline(clock: clock, rules: [], observation: policy)
+    let calm = (0..<10).flatMap { index -> [Sample] in
+      let timestamp = start.addingTimeInterval(TimeInterval(index))
+      return [
+        Sample(timestamp: timestamp, availability: .available, value: 0.3, metric: "cpu"),
+        Sample(timestamp: timestamp, availability: .available, value: 0.5, metric: "memory"),
+      ]
+    }
+    let over = ResourceUsage(used: 2.0)
+    let under = ResourceUsage(used: 0.5)
+    _ = pipeline.evaluate(calm, usage: under)
+    _ = pipeline.evaluate(calm, usage: over)
+    let degraded = pipeline.evaluate(calm, usage: over)
+    #expect(degraded.observation?.intervalsByMetric["cpu"] == 1.0)
+    #expect(degraded.observation?.intervalsByMetric["memory"] == 5.0)
+    // Swap the critical metric: cpu now degrades, memory stays exempt.
+    pipeline.updateCriticalMetrics(["memory"])
+    let redegraded = pipeline.evaluate(calm, usage: over)
+    #expect(redegraded.observation?.intervalsByMetric["cpu"] == 5.0)
+    #expect(redegraded.observation?.intervalsByMetric["memory"] == 1.0)
+  }
+
+  @Test("setSamplingInterval keeps the monitoring mode in sync")
+  func samplingIntervalSyncsMode() {
+    let store = SettingsStore(userDefaults: freshDefaults(), loginItems: FakeLoginItems())
+    store.update(\.theme, to: .dark)
+    store.setSamplingInterval(5.0)
+    #expect(store.settings.monitoringMode == .reduced)
+    #expect(store.settings.samplingInterval == 5.0)
+    // The old popover path must not wipe the new settings fields.
+    #expect(store.settings.theme == .dark)
+    store.setSamplingInterval(0.5)
+    #expect(store.settings.monitoringMode == .highDetail)
   }
 }
