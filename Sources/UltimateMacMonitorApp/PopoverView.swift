@@ -15,6 +15,7 @@ struct PopoverView: View {
     VStack(alignment: .leading, spacing: 12) {
       header
       cards
+      temperatureDetail
       if let evaluation = controller.evaluation {
         let active = evaluation.incidents.filter { $0.recoveredAt == nil }
         if !active.isEmpty {
@@ -114,6 +115,65 @@ struct PopoverView: View {
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+      }
+    }
+  }
+
+  @State private var temperatureExpanded = true
+
+  private var temperatureDetail: some View {
+    Group {
+      if controller.temperatureFresh {
+        VStack(alignment: .leading, spacing: 6) {
+          HStack(spacing: 6) {
+            Image(systemName: "thermometer").font(.callout)
+            Text("Temperature").font(.headline)
+            Spacer()
+            Image(systemName: temperatureExpanded ? "chevron.up" : "chevron.down")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          .contentShape(Rectangle())
+          .onTapGesture { temperatureExpanded.toggle() }
+          if temperatureExpanded {
+            temperatureRow(label: "CPU (Average)", value: controller.temperatureHistory.last?.value)
+            temperatureRow(label: "CPU (Performance)", value: nil)
+            temperatureRow(label: "CPU (Efficiency)", value: nil)
+            temperatureRow(label: "CPU (Secondary sensor)", value: controller.temperatureSecondaryHistory.last?.value)
+            temperatureRow(label: "GPU", value: nil)
+            temperatureRow(label: "SSD", value: controller.temperatureStorageHistory.last?.value)
+          }
+        }
+      }
+    }
+  }
+
+  private func temperatureRow(label: String, value: Double?) -> some View {
+    HStack {
+      Text(label)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .frame(width: 150, alignment: .leading)
+      if let value {
+        GeometryReader { geometry in
+          RoundedRectangle(cornerRadius: 3)
+            .fill(Color.orange.opacity(0.25))
+            .frame(height: 8)
+            .overlay(alignment: .leading) {
+              RoundedRectangle(cornerRadius: 3)
+                .fill(Color.orange)
+                .frame(width: geometry.size.width * min(max(value / 100, 0), 1), height: 8)
+            }
+        }
+        .frame(height: 8)
+        Text("\(Int(value.rounded()))°C")
+          .font(.callout.monospacedDigit())
+          .frame(width: 48, alignment: .trailing)
+      } else {
+        Text("unavailable")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+        Spacer()
       }
     }
   }
