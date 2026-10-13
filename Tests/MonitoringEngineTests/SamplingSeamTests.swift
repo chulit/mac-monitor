@@ -1753,6 +1753,80 @@ struct SamplingSeamTests {
     #expect(collector.lastDuration == 0)
   }
 
+  @Test("Process enumeration yields samples with reuse-safe identity")
+  func processEnumerationYieldsIdentity() throws {
+    let start = Date(timeIntervalSince1970: 3_000_000)
+    let clock = ControlledClock(startingAt: start)
+    var collector = ProcessCollector()
+    #expect(collector.collect(now: start).isEmpty)
+    Thread.sleep(forTimeInterval: 0.2)
+    let moment = start.addingTimeInterval(0.2)
+    let samples = collector.collect(now: moment)
+    #expect(!samples.isEmpty)
+    #expect(samples.allSatisfy { $0.metric == "cpu" && $0.timestamp == moment })
+    for sample in samples {
+      #expect(!sample.process.id.isEmpty)
+      #expect(sample.value >= 0 && sample.value <= 1)
+    }
+    let identities = samples.compactMap { collector.identity(for: $0.process) }
+    #expect(identities.count == samples.count)
+    for identity in identities {
+      #expect(identity.token.hasPrefix("\(identity.pid)-"))
+      #expect(!identity.name.isEmpty)
+    }
+  }
+
+  @Test("Process CPU shares divide deltas by elapsed capacity")
+  func processCPUShareMath() {
+    #expect(
+      ProcessCollector.cpuShare(
+        userDeltaNanos: 1_000_000_000,
+        systemDeltaNanos: 1_000_000_000,
+        elapsedNanos: 2.0,
+        processorCount: 4
+      ) == 0.25
+    )
+    #expect(
+      ProcessCollector.cpuShare(
+        userDeltaNanos: 1_000_000_000,
+        systemDeltaNanos: 1_000_000_000,
+        elapsedNanos: 0,
+        processorCount: 4
+      ) == nil
+    )
+    #expect(
+      ProcessCollector.cpuShare(
+        userDeltaNanos: 1_000_000_000,
+        systemDeltaNanos: 1_000_000_000,
+        elapsedNanos: 2.0,
+        processorCount: 0
+      ) == nil
+    )
+  }
+
+  @Test("Collector identities bridge into safe process control")
+  func collectorIdentitiesBridgeToControl() throws {
+    var collector = ProcessCollector()
+    let start = Date(timeIntervalSince1970: 4_000_000)
+    _ = collector.collect(now: start)
+    Thread.sleep(forTimeInterval: 0.2)
+    let moment = start.addingTimeInterval(0.2)
+    let samples = collector.collect(now: moment)
+    let sample = try #require(samples.first)
+    let identity = try #require(collector.identity(for: sample.process))
+    let fake = FakeExecutor(tokens: [Int(identity.pid): identity.token])
+    let control = ProcessControl(executor: fake)
+    let target = ControlledProcess(
+      pid: Int(identity.pid),
+      identityToken: identity.token,
+      name: identity.name
+    )
+    #expect(control.terminate(target, confirmations: 1) == .exited)
+    #expect(fake.terminations.count == 1)
+    #expect(fake.terminations.first?.pid == Int(identity.pid))
+    #expect(fake.terminations.first?.forcefully == false)
+  }
+
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in
       let critical = criticalRanges.contains { $0.contains(index) }
       return Sample(
