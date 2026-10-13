@@ -1,6 +1,19 @@
+import AppKit
 import Combine
 import Foundation
 import MonitoringEngine
+import UserNotifications
+
+/// Appearance-related settings mirrored out of the store so SwiftUI views
+/// can react to them. The store stays UI-free; this is the reactive bridge.
+struct AppearanceSnapshot: Equatable {
+  var theme: AppTheme
+  var accentColor: String
+  var density: InterfaceDensity
+  var showSidebarLabels: Bool
+  var compactSidebar: Bool
+  var reduceMotion: Bool
+}
 
 /// Owns the engine and its collectors, publishing each evaluation.
 /// Views stay thin: they render `makeDashboard` and friends over the
@@ -23,6 +36,15 @@ final class EngineController: ObservableObject {
   @Published private(set) var storageUnits = 0
   @Published private(set) var storageQuota = 150_000_000
   @Published private(set) var notices: [Notice] = []
+  /// Mirrored appearance settings so views react without observing the store.
+  @Published private(set) var appearance = AppearanceSnapshot(
+    theme: .auto,
+    accentColor: "blue",
+    density: .default,
+    showSidebarLabels: true,
+    compactSidebar: false,
+    reduceMotion: false
+  )
 
   private var pipeline: Pipeline<SystemClock>
   private var host: HostCollector<SystemClock>
@@ -34,10 +56,14 @@ final class EngineController: ObservableObject {
   )
   private var timer: Timer?
   private var tickCount = 0
+  /// Last collection time per metric for the per-metric cadence settings.
+  private var lastMetricFire: [String: Date] = [:]
 
   /// The user-facing settings. Owns the store when the caller passes none so
   /// the controller always has a real login-item service behind it.
   let settings: SettingsStore
+  /// Release checker backing the About panel and the auto-update setting.
+  let updater = UpdateChecker()
   private var collectionInterval: TimeInterval
 
   init(settings: SettingsStore? = nil) {
@@ -45,19 +71,23 @@ final class EngineController: ObservableObject {
     self.settings = store
     self.collectionInterval = store.settings.samplingInterval
     let clock = SystemClock()
-    // Full engine configuration per Ship-07 numeric decisions. Rules stay
-    // scoped to fraction metrics: unbounded series (network) and physical
-    // units (temperature) would otherwise trip absolute thresholds.
-    let rule = TechnicalRule(
-      threshold: 0.9,
-      triggerDuration: 30,
-      recoveryDuration: 30,
-      cooldown: 900,
-      metrics: ["cpu", "memory", "disk"]
-    )
+    // One rule per fraction metric so alert thresholds stay independent:
+    // each metric gets its own excursion tracking and its own threshold
+    // from Settings. Rules stay scoped to fraction metrics: unbounded
+    // series (network) and physical units (temperature) would otherwise
+    // trip absolute thresholds.
+    let rules = ["cpu", "memory", "disk"].map { metric in
+      TechnicalRule(
+        threshold: store.settings.threshold(for: metric),
+        triggerDuration: 30,
+        recoveryDuration: 30,
+        cooldown: 900,
+        metrics: [metric]
+      )
+    }
     pipeline = Pipeline(
       clock: clock,
-      rules: [rule],
+      rules: rules,
       baseline: BaselineConfig(
         promotionSamples: 100,
         maturitySamples: 1000,
@@ -80,10 +110,21 @@ final class EngineController: ObservableObject {
         highDetailWarningBeforeEnd: 60
       ),
       retention: RetentionPolicy(
-        detailRetention: 604_800,
+        detailRetention: Double(store.settings.retentionDays) * 86_400,
         quota: 150_000_000,
         thresholdsByMetric: ["cpu": 0.9, "memory": 0.9]
       )
+    )
+    pipeline.setHistoryRecording(historyRecording(for: store.settings))
+    pipeline.updateBudgetLimit(store.settings.maxCPU)
+    AppLog.isEnabled = store.settings.storeLogs
+    appearance = AppearanceSnapshot(
+      theme: store.settings.theme,
+      accentColor: store.settings.accentColor,
+      density: store.settings.density,
+      showSidebarLabels: store.settings.showSidebarLabels,
+      compactSidebar: store.settings.compactSidebar,
+      reduceMotion: store.settings.reduceMotion
     )
     host = HostCollector(clock: clock)
     store.addChangeHandler { [weak self] newSettings in
@@ -93,9 +134,25 @@ final class EngineController: ObservableObject {
     }
   }
 
+  private func historyRecording(for settings: MonitorSettings) -> Pipeline<SystemClock>.HistoryRecording {
+    var recording: Pipeline<SystemClock>.HistoryRecording = []
+    if settings.storeMetrics {
+      recording.insert(.metrics)
+    }
+    if settings.storeIncidents {
+      recording.insert(.incidents)
+    }
+    return recording
+  }
+
   /// Starts collection at the cadence chosen in settings.
   func start() {
     start(interval: settings.settings.samplingInterval)
+    if settings.settings.checkForUpdates {
+      Task {
+        await updater.check()
+      }
+    }
   }
 
   func start(interval: TimeInterval) {
@@ -157,8 +214,26 @@ final class EngineController: ObservableObject {
   /// Anything else (launch at login, restore of an unchanged interval) leaves
   /// the running timer alone.
   private func applySettings(_ newSettings: MonitorSettings) {
-    guard newSettings.samplingInterval != collectionInterval else { return }
-    start(interval: newSettings.samplingInterval)
+    if newSettings.samplingInterval != collectionInterval {
+      start(interval: newSettings.samplingInterval)
+    }
+    pipeline.updateRuleThresholds([
+      "cpu": newSettings.thresholdCPU,
+      "memory": newSettings.thresholdMemory,
+      "disk": newSettings.thresholdDisk,
+    ])
+    pipeline.updateRetention(detailRetention: Double(newSettings.retentionDays) * 86_400)
+    pipeline.setHistoryRecording(historyRecording(for: newSettings))
+    pipeline.updateBudgetLimit(newSettings.maxCPU)
+    AppLog.isEnabled = newSettings.storeLogs
+    appearance = AppearanceSnapshot(
+      theme: newSettings.theme,
+      accentColor: newSettings.accentColor,
+      density: newSettings.density,
+      showSidebarLabels: newSettings.showSidebarLabels,
+      compactSidebar: newSettings.compactSidebar,
+      reduceMotion: newSettings.reduceMotion
+    )
   }
 
   private func tick() {
@@ -168,12 +243,7 @@ final class EngineController: ObservableObject {
     }
     let now = Date()
     let activity = processCollector.collect(now: now)
-    var samples =
-      host.collect(now: now) + networkCollector.collect(now: now)
-      + temperatureCollector.collect(now: now)
-    if let systemCPU = processCollector.systemCPUSample() {
-      samples.insert(systemCPU, at: 0)
-    }
+    var samples = collectDueSamples(now: now)
     let usage = totalShare(
       processes: activity,
       pid: ProcessInfo.processInfo.processIdentifier
@@ -182,37 +252,42 @@ final class EngineController: ObservableObject {
     self.evaluation = evaluation
     processes = activity
     cpuShare = samples.first { $0.metric == "cpu" && $0.availability == .available }?.value
-    if let cpu = samples.first(where: { $0.metric == "cpu" && $0.availability == .available })?.value {
-      cpuHistory.append((date: now, value: cpu))
-      cpuHistory = Array(cpuHistory.suffix(120))
-    }
-    if let memory = samples.first(where: { $0.metric == "memory" && $0.availability == .available })?.value {
-      memoryHistory.append((date: now, value: memory))
-      memoryHistory = Array(memoryHistory.suffix(120))
-    }
-    if let disk = samples.first(where: { $0.metric == "disk" && $0.availability == .available })?.value {
-      diskHistory.append((date: now, value: disk))
-      diskHistory = Array(diskHistory.suffix(120))
-    }
-    if let network = samples.first(where: { $0.metric == "network" && $0.availability == .available })?.value {
-      networkHistory.append((date: now, value: network))
-      networkHistory = Array(networkHistory.suffix(120))
-    }
-    if let temperature = samples.first(where: { $0.metric == "temperature" && $0.availability == .available })?.value {
-      temperatureHistory.append((date: now, value: temperature))
-      temperatureHistory = Array(temperatureHistory.suffix(120))
+    // The rolling chart buffers are the "cache": disabling it stops them filling.
+    if settings.settings.enableCache {
+      if let cpu = samples.first(where: { $0.metric == "cpu" && $0.availability == .available })?.value {
+        cpuHistory.append((date: now, value: cpu))
+        cpuHistory = Array(cpuHistory.suffix(120))
+      }
+      if let memory = samples.first(where: { $0.metric == "memory" && $0.availability == .available })?.value {
+        memoryHistory.append((date: now, value: memory))
+        memoryHistory = Array(memoryHistory.suffix(120))
+      }
+      if let disk = samples.first(where: { $0.metric == "disk" && $0.availability == .available })?.value {
+        diskHistory.append((date: now, value: disk))
+        diskHistory = Array(diskHistory.suffix(120))
+      }
+      if let network = samples.first(where: { $0.metric == "network" && $0.availability == .available })?.value {
+        networkHistory.append((date: now, value: network))
+        networkHistory = Array(networkHistory.suffix(120))
+      }
+      if let temperature = samples.first(where: { $0.metric == "temperature" && $0.availability == .available })?.value {
+        temperatureHistory.append((date: now, value: temperature))
+        temperatureHistory = Array(temperatureHistory.suffix(120))
+      }
     }
     // A reading older than five ticks is displayed as unavailable, never
     // as a stale value masquerading as current.
     temperatureFresh =
       temperatureHistory.last.map { now.timeIntervalSince($0.date) <= 5 } ?? false
-    if let secondary = samples.first(where: { $0.metric == "temperature.secondary" && $0.availability == .available })?.value {
-      temperatureSecondaryHistory.append((date: now, value: secondary))
-      temperatureSecondaryHistory = Array(temperatureSecondaryHistory.suffix(120))
-    }
-    if let storage = samples.first(where: { $0.metric == "temperature.storage" && $0.availability == .available })?.value {
-      temperatureStorageHistory.append((date: now, value: storage))
-      temperatureStorageHistory = Array(temperatureStorageHistory.suffix(120))
+    if settings.settings.enableCache {
+      if let secondary = samples.first(where: { $0.metric == "temperature.secondary" && $0.availability == .available })?.value {
+        temperatureSecondaryHistory.append((date: now, value: secondary))
+        temperatureSecondaryHistory = Array(temperatureSecondaryHistory.suffix(120))
+      }
+      if let storage = samples.first(where: { $0.metric == "temperature.storage" && $0.availability == .available })?.value {
+        temperatureStorageHistory.append((date: now, value: storage))
+        temperatureStorageHistory = Array(temperatureStorageHistory.suffix(120))
+      }
     }
     baselineStatuses = pipeline.baselines.mapValues { $0.status }
     baselineMeans = pipeline.baselines.compactMapValues { $0.isActive ? $0.mean : nil }
@@ -220,6 +295,151 @@ final class EngineController: ObservableObject {
       storageUnits = history.storageUnits
       storageQuota = history.quota
     }
-    notices = Array((notices + notifier.update(evaluation, now: now)).suffix(50))
+    notices = Array((notices + freshNotices(from: evaluation, now: now)).suffix(50))
+  }
+
+  /// Collects only the metrics that are enabled and due per the
+  /// per-metric cadence settings. Process activity always collects: the
+  /// process table needs every tick.
+  private func collectDueSamples(now: Date) -> [Sample] {
+    let stored = settings.settings
+    var samples: [Sample] = []
+    func due(_ metric: String) -> Bool {
+      metricIsDue(
+        metric: metric,
+        lastFire: lastMetricFire[metric],
+        now: now,
+        interval: stored.metricIntervals[metric] ?? 1,
+        enabled: stored.isMonitored(metric)
+      )
+    }
+    func markFired(_ metrics: [String]) {
+      for metric in metrics {
+        lastMetricFire[metric] = now
+      }
+    }
+    if due("cpu"), let systemCPU = processCollector.systemCPUSample() {
+      samples.append(systemCPU)
+      markFired(["cpu"])
+    }
+    let hostMetrics = ["memory", "disk"].filter(due)
+    if !hostMetrics.isEmpty {
+      let produced = host.collect(now: now).filter { hostMetrics.contains($0.metric) }
+      samples += produced
+      markFired(hostMetrics)
+    }
+    if due("network") {
+      samples += networkCollector.collect(now: now)
+      markFired(["network"])
+    }
+    if due("temperature") {
+      samples += temperatureCollector.collect(now: now)
+      markFired(["temperature"])
+    }
+    return samples
+  }
+
+  /// Generates notices through the notifier (keeping its dedupe state warm)
+  /// but only surfaces and delivers them when notifications are enabled and
+  /// the notice's alert type is on.
+  private func freshNotices(from evaluation: Evaluation, now: Date) -> [Notice] {
+    let fresh = notifier.update(evaluation, now: now)
+    let stored = settings.settings
+    guard stored.notificationsEnabled else {
+      return []
+    }
+    let deliverable = fresh.filter { notice in
+      guard let metric = metricForNotice(notice, in: evaluation) else {
+        return true
+      }
+      guard let typeID = alertTypeID(forMetric: metric) else {
+        return true
+      }
+      return stored.isAlertTypeEnabled(typeID)
+    }
+    deliver(deliverable)
+    return deliverable
+  }
+
+  private func metricForNotice(_ notice: Notice, in evaluation: Evaluation) -> String? {
+    guard let startedAt = notice.incidentStartedAt,
+      let incident = evaluation.incidents.first(where: { $0.startedAt == startedAt }),
+      let timeline = evaluation.timelines.first(where: { $0.incident == incident })
+    else {
+      return nil
+    }
+    return timeline.metricSamples.first?.metric
+  }
+
+  private func deliver(_ notices: [Notice]) {
+    let stored = settings.settings
+    guard !notices.isEmpty else {
+      updateDockBadge()
+      return
+    }
+    if stored.macOSNotifications {
+      requestNotificationAuthorizationIfNeeded()
+      for notice in notices {
+        postMacOSNotification(notice)
+      }
+    }
+    if stored.alertSound {
+      NSSound(named: "Glass")?.play()
+    }
+    updateDockBadge()
+  }
+
+  private var didRequestNotificationAuthorization = false
+
+  private func requestNotificationAuthorizationIfNeeded() {
+    guard !didRequestNotificationAuthorization else {
+      return
+    }
+    didRequestNotificationAuthorization = true
+    UNUserNotificationCenter.current()
+      .requestAuthorization(options: [.alert, .sound]) { _, _ in }
+  }
+
+  private func postMacOSNotification(_ notice: Notice) {
+    let content = UNMutableNotificationContent()
+    content.title = "Ultimate Mac Monitor"
+    content.body = notice.message
+    let request = UNNotificationRequest(
+      identifier: UUID().uuidString,
+      content: content,
+      trigger: nil
+    )
+    UNUserNotificationCenter.current().add(request)
+  }
+
+  private func updateDockBadge() {
+    guard settings.settings.dockBadge else {
+      NSApplication.shared.dockTile.badgeLabel = nil
+      return
+    }
+    let count = activeIncidentCount
+    NSApplication.shared.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
+  }
+
+  /// Whether the collection timer is running (Settings → Permissions).
+  var isCollecting: Bool {
+    timer != nil
+  }
+
+  /// Drops all recorded history (Settings → Clear History).
+  func clearHistory() {
+    pipeline.clearHistory()
+    storageUnits = 0
+  }
+
+  /// Drops the in-memory rolling chart buffers (Settings → Clear Cache).
+  func clearCache() {
+    cpuHistory = []
+    memoryHistory = []
+    diskHistory = []
+    networkHistory = []
+    temperatureHistory = []
+    temperatureSecondaryHistory = []
+    temperatureStorageHistory = []
   }
 }

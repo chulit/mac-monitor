@@ -3,17 +3,16 @@ import SwiftUI
 
 /// Full window: sidebar navigation across the five sections. Selection
 /// lives in the navigation store so the popover can deep-link into it.
-///
-/// The Settings row opens the settings window (issue 19) instead of a detail
-/// view; the sidebar selection snaps back to the previous section.
 struct RootView: View {
   @ObservedObject var controller: EngineController
   @ObservedObject var store: NavigationStore
   var onOpenSettings: () -> Void = {}
 
-  @State private var previousSection: AppSection = .overview
-
   var body: some View {
+    settingsThemed(splitView)
+  }
+
+  private var splitView: some View {
     NavigationSplitView {
       VStack(alignment: .leading, spacing: 0) {
         appHeader
@@ -29,7 +28,8 @@ struct RootView: View {
         }
         .listStyle(.sidebar)
       }
-      .navigationSplitViewColumnWidth(min: 180, ideal: 200)
+      .navigationSplitViewColumnWidth(
+        min: 180, ideal: controller.appearance.compactSidebar ? 180 : 200)
     } detail: {
       switch store.section ?? .overview {
       case .overview:
@@ -43,19 +43,52 @@ struct RootView: View {
       case .history:
         HistoryView(controller: controller)
       case .settings:
-        EmptyView()
-      }
-    }
-    .onChange(of: store.section) { newSection in
-      guard let newSection else { return }
-      if newSection == .settings {
-        onOpenSettings()
-        store.section = previousSection
-      } else {
-        previousSection = newSection
+        SettingsCenterView(controller: controller)
       }
     }
     .frame(minWidth: 760, minHeight: 480)
+  }
+
+  /// Applies the appearance settings (theme, accent, density) to the whole window.
+  @ViewBuilder
+  private func settingsThemed<Content: View>(_ content: Content) -> some View {
+    let themed = content
+      .preferredColorScheme(themeScheme)
+      .controlSize(densityControlSize)
+    if let accent = accentColor(for: controller.appearance.accentColor) {
+      themed.tint(accent)
+    } else {
+      themed
+    }
+  }
+
+  private var themeScheme: ColorScheme? {
+    switch controller.appearance.theme {
+    case .light: return .light
+    case .dark: return .dark
+    case .auto: return nil
+    }
+  }
+
+  private var densityControlSize: ControlSize {
+    switch controller.appearance.density {
+    case .default: return .regular
+    case .compact: return .small
+    case .spacious: return .large
+    }
+  }
+
+  private func accentColor(for name: String) -> Color? {
+    switch name {
+    case "blue": return .blue
+    case "purple": return .purple
+    case "pink": return .pink
+    case "orange": return .orange
+    case "yellow": return .yellow
+    case "green": return .green
+    case "cyan": return .cyan
+    default: return nil
+    }
   }
 
   // MARK: Sidebar
@@ -79,8 +112,10 @@ struct RootView: View {
             .font(.body)
             .foregroundStyle(Color(red: 0.35, green: 0.65, blue: 1.0))
         )
-      Text("Ultimate Mac Monitor")
-        .font(.headline)
+      if controller.appearance.showSidebarLabels {
+        Text("Ultimate Mac Monitor")
+          .font(.headline)
+      }
     }
     .padding(.horizontal)
     .padding(.top, 12)
@@ -89,12 +124,22 @@ struct RootView: View {
 
   @ViewBuilder
   private func sidebarLabel(for section: AppSection) -> some View {
-    let label = Label(section.title, systemImage: section.icon).tag(section)
     // The badge is the live active-incident count, never a hardcoded number.
-    if section == .incidents, controller.activeIncidentCount > 0 {
-      label.badge(controller.activeIncidentCount)
+    let badge = controller.activeIncidentCount
+    if controller.appearance.showSidebarLabels {
+      let label = Label(section.title, systemImage: section.icon).tag(section)
+      if section == .incidents, badge > 0 {
+        label.badge(badge)
+      } else {
+        label
+      }
     } else {
-      label
+      let icon = Image(systemName: section.icon).tag(section).help(section.title)
+      if section == .incidents, badge > 0 {
+        icon.badge(badge)
+      } else {
+        icon
+      }
     }
   }
 

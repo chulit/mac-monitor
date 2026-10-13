@@ -447,8 +447,12 @@ struct HistoryDetailView: View {
         .foregroundStyle(.secondary)
       HStack(spacing: 8) {
         Button {
-          withAnimation {
+          if controller.settings.settings.reduceMotion {
             proxy.scrollTo("affectedProcesses", anchor: .top)
+          } else {
+            withAnimation {
+              proxy.scrollTo("affectedProcesses", anchor: .top)
+            }
           }
         } label: {
           Label("View Related Processes", systemImage: "list.bullet")
@@ -493,7 +497,7 @@ struct HistoryDetailView: View {
       let package = try IncidentArchive().export(
         timeline,
         summaries: snapshot.summaries,
-        redactProcessNames: false,
+        redactProcessNames: controller.settings.settings.hideSensitiveInfo,
         now: Date()
       )
       let data = try package.encoded()
