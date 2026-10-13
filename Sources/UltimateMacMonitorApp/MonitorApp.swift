@@ -7,24 +7,11 @@ struct MonitorApp: App {
 
   var body: some Scene {
     WindowGroup {
-      TabView {
-        DashboardView(controller: controller)
-          .tabItem {
-            Label("Dashboard", systemImage: "gauge.with.dots.needle.67percent")
-          }
-        TimelineView(controller: controller)
-          .tabItem {
-            Label("Investigation", systemImage: "timeline.selection")
-          }
-        ProcessTreeView(controller: controller)
-          .tabItem {
-            Label("Processes", systemImage: "list.bullet")
-          }
-      }
-      .onAppear {
-        delegate.bind(controller)
-        controller.start()
-      }
+      RootView(controller: controller)
+        .onAppear {
+          delegate.bind(controller)
+          controller.start()
+        }
     }
   }
 }

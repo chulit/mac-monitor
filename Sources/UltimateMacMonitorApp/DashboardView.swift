@@ -2,7 +2,9 @@ import Charts
 import SwiftUI
 import MonitoringEngine
 
-/// Dashboard: status banner, stat cards with sparklines, then detail.
+/// Dashboard: status banner, stat cards with adaptive sparklines, then a
+/// compact detail area. A ScrollView keeps content top-aligned instead of
+/// stretching empty rows across the window.
 struct DashboardView: View {
   @ObservedObject var controller: EngineController
 
@@ -10,24 +12,24 @@ struct DashboardView: View {
     Group {
       if let evaluation = controller.evaluation {
         let snapshot = makeDashboard(evaluation, detail: .detailed)
-        List {
-          Section {
-            HStack(alignment: .firstTextBaseline) {
-              Text(snapshot.headline)
-                .font(.title2.bold())
-              Spacer()
-              statusPill(snapshot.monitoring)
+        ScrollView {
+          VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+              HStack(alignment: .firstTextBaseline) {
+                Text(snapshot.headline)
+                  .font(.title2.bold())
+                Spacer()
+                statusPill(snapshot.monitoring)
+              }
+              if let detail = snapshot.monitoring.detail {
+                Text(detail)
+                  .font(.callout)
+                  .foregroundStyle(.secondary)
+              }
+              Text("System health: unknown (not assessed)")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
             }
-            if let detail = snapshot.monitoring.detail {
-              Text(detail)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            }
-            Text("System health: unknown (not assessed)")
-              .font(.caption)
-              .foregroundStyle(.tertiary)
-          }
-          Section("Resources") {
             HStack(spacing: 12) {
               statCard(
                 title: "CPU",
@@ -42,70 +44,91 @@ struct DashboardView: View {
                 tint: .green
               )
             }
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
+            detailSections(snapshot: snapshot)
           }
-          Section("Incidents") {
-            if snapshot.incidents.isEmpty {
-              Text("None").foregroundStyle(.secondary)
-            } else {
-              ForEach(snapshot.incidents.indices, id: \.self) { index in
-                let incident = snapshot.incidents[index]
-                HStack {
-                  Image(systemName: incident.isActive ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                    .foregroundStyle(incident.isActive ? .orange : .green)
-                  VStack(alignment: .leading) {
-                    Text(incident.isActive ? "Active incident" : "Recovered incident")
-                    Text("\(incident.relevantProcessCount) relevant processes")
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                  }
-                }
-              }
-            }
-          }
-          Section("Baselines") {
-            if controller.baselineStatuses.isEmpty {
-              Text("Learning…").foregroundStyle(.secondary)
-            } else {
-              ForEach(controller.baselineStatuses.sorted(by: { $0.key < $1.key }), id: \.key) { metric, status in
-                HStack {
-                  Text(metric)
-                  Spacer()
-                  Text(status.rawValue)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-              }
-            }
-          }
-          Section("History storage") {
-            Text("\(controller.storageUnits) of \(controller.storageQuota) samples retained")
-              .font(.caption)
-          }
-          Section("Notices") {
-            if controller.notices.isEmpty {
-              Text("None").foregroundStyle(.secondary)
-            } else {
-              ForEach(Array(controller.notices.suffix(5).enumerated()), id: \.offset) { _, notice in
-                VStack(alignment: .leading) {
-                  Text(notice.message)
-                  if let detail = notice.detail {
-                    Text(detail)
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                  }
-                }
+          .padding()
+        }
+      } else {
+        ProgressView("Collecting first samples…")
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+    }
+    .navigationTitle("Ultimate Mac Monitor")
+  }
+
+  @ViewBuilder
+  private func detailSections(snapshot: DashboardSnapshot) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+      if !snapshot.incidents.isEmpty {
+        detailGroup(title: "Incidents") {
+          ForEach(snapshot.incidents.indices, id: \.self) { index in
+            let incident = snapshot.incidents[index]
+            HStack {
+              Image(systemName: incident.isActive ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(incident.isActive ? .orange : .green)
+              VStack(alignment: .leading) {
+                Text(incident.isActive ? "Active incident" : "Recovered incident")
+                Text("\(incident.relevantProcessCount) relevant processes")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
               }
             }
           }
         }
-      } else {
-        ProgressView("Collecting first samples…")
+      }
+      detailGroup(title: "Baselines") {
+        if controller.baselineStatuses.isEmpty {
+          Text("Learning…").foregroundStyle(.secondary)
+        } else {
+          ForEach(controller.baselineStatuses.sorted(by: { $0.key < $1.key }), id: \.key) { metric, status in
+            HStack {
+              Text(metric)
+              Spacer()
+              Text(status.rawValue)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+        }
+      }
+      detailGroup(title: "History storage") {
+        Text("\(controller.storageUnits) samples · quota \(quotaText)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      if !controller.notices.isEmpty {
+        detailGroup(title: "Notices") {
+          ForEach(Array(controller.notices.suffix(5).enumerated()), id: \.offset) { _, notice in
+            VStack(alignment: .leading) {
+              Text(notice.message)
+              if let detail = notice.detail {
+                Text(detail)
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
+          }
+        }
       }
     }
-    .navigationTitle("Ultimate Mac Monitor")
-    .frame(minWidth: 520, minHeight: 420)
+  }
+
+  @ViewBuilder
+  private func detailGroup<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text(title.uppercased())
+        .font(.caption.bold())
+        .foregroundStyle(.secondary)
+      content()
+    }
+  }
+
+  private var quotaText: String {
+    let millions = Double(controller.storageQuota) / 1_000_000
+    if millions >= 1 {
+      return String(format: "%.1fM", millions)
+    }
+    return "\(controller.storageQuota)"
   }
 
   private func statusPill(_ monitoring: MonitoringStatus) -> some View {
@@ -142,7 +165,7 @@ struct DashboardView: View {
         LineMark(x: .value("Time", point.date), y: .value(title, point.value))
           .foregroundStyle(tint)
       }
-      .chartYScale(domain: 0...1)
+      .chartYScale(domain: sparkDomain(values: history.map(\.value)))
       .chartXAxis(.hidden)
       .chartYAxis(.hidden)
       .frame(height: 48)
@@ -150,5 +173,13 @@ struct DashboardView: View {
     .padding(10)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+  }
+
+  private func sparkDomain(values: [Double]) -> ClosedRange<Double> {
+    guard let lo = values.min(), let hi = values.max(), hi > lo else {
+      return 0...1
+    }
+    let padding = max((hi - lo) * 0.25, 0.02)
+    return max(0, lo - padding)...min(1, hi + padding)
   }
 }
