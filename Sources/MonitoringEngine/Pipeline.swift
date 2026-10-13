@@ -51,10 +51,12 @@ public struct Evaluation: Sendable, Equatable {
 
 public final class Pipeline<C: Clock> {
   private let clock: C
-  private let rules: [TechnicalRule]
+  private var rules: [TechnicalRule]
   private let baselineConfig: BaselineConfig?
-  private let observationPolicy: ObservationPolicy?
+  private var observationPolicy: ObservationPolicy?
   private let retentionPolicy: RetentionPolicy?
+  private var historyStore: HistoryStore?
+  private var historyRecording = HistoryRecording.metricsAndIncidents
   public private(set) var baselines: [String: Baseline] = [:]
   private var observationState: ObservationState?
   private var observationHistory: [ObservationTransition] = []
@@ -87,6 +89,84 @@ public final class Pipeline<C: Clock> {
 
   public func pin(_ incident: Incident) {
     historyStore?.pin(incident)
+  }
+
+  /// Which parts of the retention store stay enabled. Driven by the
+  /// Data & Storage settings; the in-memory evaluation is unaffected.
+  public struct HistoryRecording: OptionSet, Sendable {
+    public let rawValue: Int
+    public init(rawValue: Int) {
+      self.rawValue = rawValue
+    }
+
+    public static let metrics = HistoryRecording(rawValue: 1 << 0)
+    public static let incidents = HistoryRecording(rawValue: 1 << 1)
+    public static let metricsAndIncidents: HistoryRecording = [.metrics, .incidents]
+  }
+
+  public func setHistoryRecording(_ recording: HistoryRecording) {
+    historyRecording = recording
+  }
+
+  /// Replaces the rule thresholds in place (Settings → Alert Thresholds).
+  /// Baselines, history, and observation state are preserved; only rules
+  /// whose single scoped metric has a new threshold are rebuilt.
+  public func updateRuleThresholds(_ thresholds: [String: Double]) {
+    rules = rules.map { rule in
+      guard let metrics = rule.metrics, metrics.count == 1,
+        let metric = metrics.first, let threshold = thresholds[metric]
+      else {
+        return rule
+      }
+      return TechnicalRule(
+        threshold: threshold,
+        triggerDuration: rule.triggerDuration,
+        recoveryDuration: rule.recoveryDuration,
+        cooldown: rule.cooldown,
+        version: rule.version,
+        metrics: rule.metrics
+      )
+    }
+  }
+
+  /// Live retention change (Settings → Data Retention). The new cutoff
+  /// applies on the next recorded batch; older data compacts then.
+  public func updateRetention(detailRetention: TimeInterval) {
+    historyStore?.updatePolicy(
+      RetentionPolicy(
+        detailRetention: detailRetention,
+        quota: retentionPolicy?.quota ?? 150_000_000,
+        thresholdsByMetric: retentionPolicy?.thresholdsByMetric ?? [:]
+      )
+    )
+  }
+
+  /// Live observation budget change (Settings → Max CPU Usage).
+  public func updateBudgetLimit(_ limit: Double) {
+    guard var policy = observationPolicy else {
+      return
+    }
+    policy = ObservationPolicy(
+      budgetLimit: limit,
+      criticalMetrics: policy.criticalMetrics,
+      normalInterval: policy.normalInterval,
+      reducedInterval: policy.reducedInterval,
+      highDetailInterval: policy.highDetailInterval,
+      overBudgetEvaluationsToDegrade: policy.overBudgetEvaluationsToDegrade,
+      underBudgetEvaluationsToRecover: policy.underBudgetEvaluationsToRecover,
+      maximumHighDetailDuration: policy.maximumHighDetailDuration,
+      highDetailWarningBeforeEnd: policy.highDetailWarningBeforeEnd
+    )
+    observationPolicy = policy
+  }
+
+  /// Drops all recorded history (Settings → Clear History). Live
+  /// baselines and the current evaluation are untouched.
+  public func clearHistory() {
+    guard let policy = retentionPolicy else {
+      return
+    }
+    historyStore = HistoryStore(policy: policy)
   }
 
   public func baseline(for metric: String) -> Baseline? {
@@ -181,7 +261,9 @@ public final class Pipeline<C: Clock> {
     }
     let incidents = ruleIncidents + deviationIncidents
     if retentionPolicy != nil {
-      historyStore?.record(samples: samples, incidents: incidents, now: clock.now())
+      let keptSamples = historyRecording.contains(.metrics) ? samples : []
+      let keptIncidents = historyRecording.contains(.incidents) ? incidents : []
+      historyStore?.record(samples: keptSamples, incidents: keptIncidents, now: clock.now())
     }
     if let config = baselineConfig {
       for metric in metrics {

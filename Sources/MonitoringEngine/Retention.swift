@@ -96,6 +96,15 @@ struct HistoryStore {
     }
   }
 
+  mutating func updatePolicy(_ policy: RetentionPolicy) {
+    var fresh = HistoryStore(policy: policy)
+    fresh.details = details
+    fresh.summaries = summaries
+    fresh.incidents = incidents
+    fresh.pinned = pinned
+    self = fresh
+  }
+
   func snapshot() -> HistorySnapshot {
     HistorySnapshot(
       details: details,
