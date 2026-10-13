@@ -67,16 +67,7 @@ struct TopProcessesCard: View {
               .font(.callout.monospacedDigit())
               .foregroundStyle(.secondary)
           }
-          GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-              RoundedRectangle(cornerRadius: 3)
-                .fill(Color.blue.opacity(0.15))
-              RoundedRectangle(cornerRadius: 3)
-                .fill(Color.blue)
-                .frame(width: geometry.size.width * CGFloat(item.share))
-            }
-          }
-          .frame(height: 6)
+          SlimProgressBar(value: item.share, tint: .blue)
         }
         Image(systemName: "chevron.right")
           .font(.caption)

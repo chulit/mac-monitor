@@ -18,12 +18,17 @@ struct DashboardView: View {
         ScrollView {
           VStack(alignment: .leading, spacing: 16) {
             OverviewHeaderView(controller: controller, timeRange: $timeRange)
+            investigationCard
             metricCards
             usageTimelineCard
             bottomCards
             detailSections(snapshot: snapshot)
           }
           .padding()
+          .animation(
+            .spring(response: 0.45, dampingFraction: 0.85),
+            value: controller.isInvestigating
+          )
         }
       } else {
         ProgressView("Collecting first samples…")
@@ -100,6 +105,26 @@ struct DashboardView: View {
       ],
       timeRange: timeRange
     )
+  }
+
+  /// The dedicated investigation card, visible only while a high-detail
+  /// session runs. The spring on the container animates its entrance and exit.
+  @ViewBuilder
+  private var investigationCard: some View {
+    if controller.isInvestigating,
+      let mode = controller.evaluation?.observation?.mode,
+      case .highDetail(let remaining, let limit, _) = mode
+    {
+      InvestigationProgressCard(
+        progress: investigationProgress(
+          remaining: remaining,
+          limit: limit,
+          incidents: controller.evaluation?.incidents ?? [],
+          now: Date()
+        )
+      )
+      .transition(.scale(scale: 0.96).combined(with: .opacity))
+    }
   }
 
   private var bottomCards: some View {
