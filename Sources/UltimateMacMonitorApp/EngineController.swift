@@ -10,6 +10,8 @@ final class EngineController: ObservableObject {
   @Published private(set) var evaluation: Evaluation?
   @Published private(set) var processes: [ProcessSample] = []
   @Published private(set) var cpuShare: Double?
+  @Published private(set) var cpuHistory: [(date: Date, value: Double)] = []
+  @Published private(set) var memoryHistory: [(date: Date, value: Double)] = []
   @Published private(set) var baselineStatuses: [String: Baseline.Status] = [:]
   @Published private(set) var storageUnits = 0
   @Published private(set) var storageQuota = 150_000_000
@@ -92,6 +94,14 @@ final class EngineController: ObservableObject {
     self.evaluation = evaluation
     processes = activity
     cpuShare = samples.first { $0.metric == "cpu" && $0.availability == .available }?.value
+    if let cpu = samples.first(where: { $0.metric == "cpu" && $0.availability == .available })?.value {
+      cpuHistory.append((date: now, value: cpu))
+      cpuHistory = Array(cpuHistory.suffix(120))
+    }
+    if let memory = samples.first(where: { $0.metric == "memory" && $0.availability == .available })?.value {
+      memoryHistory.append((date: now, value: memory))
+      memoryHistory = Array(memoryHistory.suffix(120))
+    }
     baselineStatuses = pipeline.baselines.mapValues { $0.status }
     if let history = pipeline.history {
       storageUnits = history.storageUnits
