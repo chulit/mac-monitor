@@ -6,9 +6,19 @@
 
 **Status:** ready-for-agent
 
-- [ ] "Live Findings" card with waveform header icon, displaying real-time stream of detected conditions with severity icons (red circle for high CPU, amber triangle for memory, blue wave for network, gray disk/circle) and relative timestamps ("just now", "15s ago", etc.)
-- [ ] "Preliminary Insights" card with lightbulb header icon, displaying synthesized summaries with colored badges (WindowServer high CPU, memory usage above average, background network activity)
-- [ ] Bottom info banner on Preliminary Insights card with `info.circle` stating: "Investigation is still in progress. Final report will be available shortly."
-- [ ] Split 2-column layout mirroring `b. overview - start-investigating.png`
+- [x] "Live Findings" card with waveform header icon, displaying real-time stream of detected conditions with severity icons (red circle for high CPU, amber triangle for memory, blue wave for network, gray disk/circle) and relative timestamps ("just now", "15s ago", etc.)
+- [x] "Preliminary Insights" card with lightbulb header icon, displaying synthesized summaries with colored badges (WindowServer high CPU, memory usage above average, background network activity)
+- [x] Bottom info banner on Preliminary Insights card with `info.circle` stating: "Investigation is still in progress. Final report will be available shortly."
+- [x] Split 2-column layout mirroring `b. overview - start-investigating.png`
 
 ## Comments
+
+## Notes (2026-10-13)
+
+- Engine (`OverviewCards.swift`): `liveFindings` (insiden terbaru dulu, hanya
+  insiden engine — tidak ada temuan sintetis) dan `preliminaryInsights`
+  (headline dari fakta "largest share" milik engine, detail dari hipotesis).
+- Kedua kartu hanya tampil saat investigating, dalam baris 2 kolom di bawah
+  kartu progres, ikut spring animation yang sama.
+- Belum terverifikasi di Mac: `swift test` + tampilan kartu (tidak bisa build
+  Swift di VM Linux).
