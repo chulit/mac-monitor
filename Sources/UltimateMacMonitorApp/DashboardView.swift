@@ -33,6 +33,42 @@ struct DashboardView: View {
               }
             }
           }
+          Section("Baselines") {
+            if controller.baselineStatuses.isEmpty {
+              Text("Learning…")
+            } else {
+              ForEach(controller.baselineStatuses.sorted(by: { $0.key < $1.key }), id: \.key) { metric, status in
+                HStack {
+                  Text(metric)
+                  Spacer()
+                  Text(status.rawValue)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
+            }
+          }
+          Section("History storage") {
+            Text("\(controller.storageUnits) of \(controller.storageQuota) samples retained")
+              .font(.caption)
+          }
+          Section("Notices") {
+            if controller.notices.isEmpty {
+              Text("None")
+            } else {
+              ForEach(controller.notices.suffix(5).indices, id: \.self) { index in
+                let notice = Array(controller.notices.suffix(5))[index]
+                VStack(alignment: .leading) {
+                  Text(notice.message)
+                  if let detail = notice.detail {
+                    Text(detail)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                }
+              }
+            }
+          }
         }
       } else {
         Text("Collecting first samples…")

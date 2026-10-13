@@ -38,7 +38,6 @@
 - Quota unit is samples (engine counts samples): **150.000.000** (~8 days headroom at ~202 samples/s)
 
 ### Benchmark gates (calibrated 2026-10-13, replaces the smoke values below)
-
 Measured on MacBook Air M2, 8-core, 8 GB, macOS 27.0.1 (Mac14,2), debug build as an upper bound, 20 repetitions per level. Gates sit ~75–200x above observed maxima: silent when healthy, tripping on hangs and 10–100x regressions.
 
 | Level | wall | CPU | resident growth | blocks out |
@@ -52,3 +51,11 @@ Device-specific: other models need their own matrix; these numbers do not transf
 ### Benchmark gates (smoke level; superseded by the calibrated table above)
 
 - Wall **1s**, CPU **1s**, resident growth **100 MB**, block output **1.000** — identical for idle, normal, and investigation
+
+### Derived numbers (decided with maintainer during Ship-10 wiring)
+
+- Notification high severity: incident duration **300s** (10x trigger)
+- Sampling intervals: normal **1.0s**, reduced **5.0s**, high-detail **0.5s**
+- Baseline deviation timing: same as detection (**30/30/900**)
+- High-detail warning window: **60s** (10% of the session cap; UX detail, not a product threshold)
+- Retention thresholds by metric mirror the detection threshold (**0.9**)
