@@ -1717,7 +1717,7 @@ struct SamplingSeamTests {
     let clock = ControlledClock(startingAt: start)
     var collector = HostCollector(clock: clock)
     let first = collector.collect(now: clock.now())
-    #expect(Set(first.map(\.metric)) == ["cpu", "memory"])
+    #expect(Set(first.map(\.metric)) == ["cpu", "memory", "disk"])
     #expect(first.allSatisfy { $0.timestamp == start })
     let cpu = first.first { $0.metric == "cpu" }
     #expect(cpu?.availability == .unavailable)
@@ -2161,6 +2161,51 @@ struct SamplingSeamTests {
     #expect(totalShare(processes: samples, pid: 111) == 0.5)
     #expect(totalShare(processes: samples, pid: 999) == nil)
     #expect(totalShare(processes: [], pid: 111) == nil)
+  }
+
+  @Test("Disk samples report used fraction with honest availability")
+  func diskSamplesReportUsedFraction() {
+    let start = Date(timeIntervalSince1970: 6_000_000)
+    let clock = ControlledClock(startingAt: start)
+    var collector = HostCollector(clock: clock)
+    let samples = collector.collect(now: start)
+    let disk = samples.first { $0.metric == "disk" }
+    #expect(disk?.timestamp == start)
+    if disk?.availability == .available, let value = disk?.value {
+      #expect(value >= 0 && value <= 1)
+    } else {
+      #expect(disk?.availability == .unavailable)
+    }
+  }
+
+  @Test("Network collectors measure throughput on repeat collections")
+  func networkCollectorsMeasureThroughput() throws {
+    var collector = NetworkCollector()
+    let start = Date(timeIntervalSince1970: 7_000_000)
+    let first = collector.collect(now: start)
+    #expect(first.count == 1)
+    #expect(first.first?.availability == .unavailable)
+    Thread.sleep(forTimeInterval: 0.2)
+    let moment = start.addingTimeInterval(0.2)
+    let second = collector.collect(now: moment)
+    let sample = try #require(second.first { $0.metric == "network" })
+    #expect(sample.timestamp == moment)
+    #expect(sample.availability == .available)
+    #expect((sample.value ?? -1) >= 0)
+  }
+
+  @Test("Network rates divide byte deltas by elapsed time")
+  func networkRateMath() {
+    #expect(NetworkCollector.rate(inDelta: 1000, outDelta: 3000, elapsed: 2.0) == 2000.0)
+    #expect(NetworkCollector.rate(inDelta: 1000, outDelta: 3000, elapsed: 0) == nil)
+  }
+
+  @Test("Rates format into human byte units")
+  func ratesFormatIntoByteUnits() {
+    #expect(formatRate(0) == "0 B/s")
+    #expect(formatRate(512) == "512 B/s")
+    #expect(formatRate(1536) == "1.5 KB/s")
+    #expect(formatRate(4_194_304) == "4.0 MB/s")
   }
 
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in

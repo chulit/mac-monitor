@@ -1,29 +1,29 @@
 import SwiftUI
 
-/// Full window: sidebar navigation across the three screens.
+/// Full window: sidebar navigation across the three screens. Selection
+/// lives in the navigation store so the popover can deep-link into it.
 struct RootView: View {
   @ObservedObject var controller: EngineController
-  @State private var selection: Section? = .dashboard
-
-  enum Section: Hashable {
-    case dashboard
-    case investigation
-    case processes
-  }
+  @ObservedObject var store: NavigationStore
 
   var body: some View {
     NavigationSplitView {
-      List(selection: $selection) {
+      List(
+        selection: Binding(
+          get: { store.section },
+          set: { store.section = $0 }
+        )
+      ) {
         Label("Dashboard", systemImage: "gauge.with.dots.needle.67percent")
-          .tag(Section.dashboard)
+          .tag(AppSection.dashboard)
         Label("Investigation", systemImage: "timeline.selection")
-          .tag(Section.investigation)
+          .tag(AppSection.investigation)
         Label("Processes", systemImage: "list.bullet")
-          .tag(Section.processes)
+          .tag(AppSection.processes)
       }
       .navigationSplitViewColumnWidth(min: 180, ideal: 200)
     } detail: {
-      switch selection ?? .dashboard {
+      switch store.section ?? .dashboard {
       case .dashboard:
         DashboardView(controller: controller)
       case .investigation:

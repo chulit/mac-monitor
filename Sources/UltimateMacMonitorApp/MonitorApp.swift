@@ -7,7 +7,7 @@ struct MonitorApp: App {
 
   var body: some Scene {
     WindowGroup {
-      RootView(controller: controller)
+      RootView(controller: controller, store: delegate.navigation)
         .onAppear {
           delegate.bind(controller)
           controller.start()

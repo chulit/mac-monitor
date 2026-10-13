@@ -12,6 +12,8 @@ final class EngineController: ObservableObject {
   @Published private(set) var cpuShare: Double?
   @Published private(set) var cpuHistory: [(date: Date, value: Double)] = []
   @Published private(set) var memoryHistory: [(date: Date, value: Double)] = []
+  @Published private(set) var diskHistory: [(date: Date, value: Double)] = []
+  @Published private(set) var networkHistory: [(date: Date, value: Double)] = []
   @Published private(set) var baselineStatuses: [String: Baseline.Status] = [:]
   @Published private(set) var storageUnits = 0
   @Published private(set) var storageQuota = 150_000_000
@@ -20,6 +22,7 @@ final class EngineController: ObservableObject {
   private var pipeline: Pipeline<SystemClock>
   private var host: HostCollector<SystemClock>
   private var processCollector = ProcessCollector()
+  private var networkCollector = NetworkCollector()
   private var notifier = Notifier(
     policy: NotificationPolicy(cooldown: 900, highSeverityAfter: 300)
   )
@@ -82,9 +85,13 @@ final class EngineController: ObservableObject {
     timer = nil
   }
 
+  func requestHighDetail(seconds: TimeInterval) {
+    pipeline.requestHighDetail(duration: seconds)
+  }
+
   private func tick() {
     let now = Date()
-    let samples = host.collect(now: now)
+    let samples = host.collect(now: now) + networkCollector.collect(now: now)
     let activity = processCollector.collect(now: now)
     let usage = totalShare(
       processes: activity,
@@ -101,6 +108,14 @@ final class EngineController: ObservableObject {
     if let memory = samples.first(where: { $0.metric == "memory" && $0.availability == .available })?.value {
       memoryHistory.append((date: now, value: memory))
       memoryHistory = Array(memoryHistory.suffix(120))
+    }
+    if let disk = samples.first(where: { $0.metric == "disk" && $0.availability == .available })?.value {
+      diskHistory.append((date: now, value: disk))
+      diskHistory = Array(diskHistory.suffix(120))
+    }
+    if let network = samples.first(where: { $0.metric == "network" && $0.availability == .available })?.value {
+      networkHistory.append((date: now, value: network))
+      networkHistory = Array(networkHistory.suffix(120))
     }
     baselineStatuses = pipeline.baselines.mapValues { $0.status }
     if let history = pipeline.history {

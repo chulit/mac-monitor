@@ -320,6 +320,19 @@ func iso(_ date: Date) -> String {
   ISO8601DateFormatter().string(from: date)
 }
 
+public func formatRate(_ bytesPerSecond: Double) -> String {
+  guard bytesPerSecond >= 0 else {
+    return "–"
+  }
+  if bytesPerSecond < 1024 {
+    return "\(Int(bytesPerSecond)) B/s"
+  }
+  if bytesPerSecond < 1_048_576 {
+    return String(format: "%.1f KB/s", bytesPerSecond / 1024)
+  }
+  return String(format: "%.1f MB/s", bytesPerSecond / 1_048_576)
+}
+
 public func makeExplanation(_ timeline: IncidentTimeline) -> Explanation {
   let incident = timeline.incident
   var facts: [String] = []

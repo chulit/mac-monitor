@@ -24,7 +24,7 @@ public struct CapabilityMatrix: Sendable, Equatable {
   public var systemMetrics: Set<String> {
     switch architecture {
     case "arm64", "x86_64":
-      return ["cpu", "memory"]
+      return ["cpu", "memory", "disk", "network"]
     default:
       return []
     }

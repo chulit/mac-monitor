@@ -18,7 +18,7 @@ public struct HostCollector<C: Clock> {
   public mutating func collect(now: Date) -> [Sample] {
     let started = clock.now()
     defer { lastDuration = clock.now().timeIntervalSince(started) }
-    return [cpuSample(at: now), memorySample(at: now)]
+    return [cpuSample(at: now), memorySample(at: now), diskSample(at: now)]
   }
 
   private struct CPUTicks: Equatable {
@@ -71,6 +71,19 @@ public struct HostCollector<C: Clock> {
       nice: UInt64(info.cpu_ticks.2),
       idle: UInt64(info.cpu_ticks.3)
     )
+  }
+
+  private func diskSample(at now: Date) -> Sample {
+    guard
+      let attributes = try? FileManager.default.attributesOfFileSystem(forPath: "/"),
+      let total = attributes[.systemSize] as? NSNumber,
+      let free = attributes[.systemFreeSize] as? NSNumber,
+      total.doubleValue > 0
+    else {
+      return Sample(timestamp: now, availability: .unavailable, metric: "disk")
+    }
+    let fraction = min(max(1 - free.doubleValue / total.doubleValue, 0), 1)
+    return Sample(timestamp: now, availability: .available, value: fraction, metric: "disk")
   }
 
   private func memorySample(at now: Date) -> Sample {
