@@ -128,8 +128,11 @@ public final class Pipeline<C: Clock> {
     let gaps = samples
       .filter { $0.availability == .unavailable }
       .map { Gap(timestamp: $0.timestamp) }
-    let ruleIncidents = rules.flatMap {
-      incidents(matching: $0, in: samples, source: .rule(version: $0.version))
+    let ruleIncidents = rules.flatMap { rule in
+      let scoped =
+        rule.metrics.map { allowed in samples.filter { allowed.contains($0.metric) } }
+        ?? samples
+      return incidents(matching: rule, in: scoped, source: .rule(version: rule.version))
     }
     var deviationIncidents: [Incident] = []
     let metrics = Set(samples.map(\.metric)).union(baselines.keys).sorted()

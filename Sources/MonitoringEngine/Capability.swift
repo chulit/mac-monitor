@@ -30,6 +30,15 @@ public struct CapabilityMatrix: Sendable, Equatable {
     }
   }
 
+  public var temperatureMetrics: Set<String> {
+    switch architecture {
+    case "arm64":
+      return ["temperature", "temperature.secondary", "temperature.storage"]
+    default:
+      return []
+    }
+  }
+
   public var processMetrics: Set<String> {
     switch architecture {
     case "arm64", "x86_64":
@@ -41,6 +50,7 @@ public struct CapabilityMatrix: Sendable, Equatable {
 
   public func supports(_ metric: String) -> Bool {
     systemMetrics.contains(metric) || processMetrics.contains(metric)
+      || temperatureMetrics.contains(metric)
   }
 
   private static func hardwareMachine() -> String {

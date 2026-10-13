@@ -1833,6 +1833,7 @@ struct SamplingSeamTests {
     #expect(arm.architecture == "arm64")
     #expect(arm.supports("cpu"))
     #expect(arm.supports("memory"))
+    #expect(arm.supports("temperature"))
     #expect(!arm.supports("quantum"))
     let intel = CapabilityMatrix.forArchitecture("x86_64")
     #expect(intel.supports("cpu"))
@@ -2206,6 +2207,47 @@ struct SamplingSeamTests {
     #expect(formatRate(512) == "512 B/s")
     #expect(formatRate(1536) == "1.5 KB/s")
     #expect(formatRate(4_194_304) == "4.0 MB/s")
+  }
+
+  @Test("Rules scoped to metrics ignore other metrics")
+  func rulesScopedToMetrics() {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30,
+      metrics: ["cpu"]
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    #expect(pipeline.evaluate(cpu).incidents.count == 1)
+    let memory = (0..<22).map { index in
+      Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: index >= 5 && index <= 14 ? 0.95 : 0.3,
+        metric: "memory"
+      )
+    }
+    #expect(pipeline.evaluate(memory).incidents.isEmpty)
+  }
+
+  @Test("Temperature collectors report honest Celsius readings")
+  func temperatureCollectorsReportCelsius() {
+    let start = Date(timeIntervalSince1970: 8_000_000)
+    let collector = TemperatureCollector()
+    let samples = collector.collect(now: start)
+    #expect(Set(samples.map(\.metric)) == ["temperature", "temperature.secondary", "temperature.storage"])
+    #expect(samples.allSatisfy { $0.timestamp == start })
+    for sample in samples {
+      if sample.availability == .available, let value = sample.value {
+        #expect(value > -20 && value < 125)
+      } else {
+        #expect(sample.availability == .unavailable)
+      }
+    }
   }
 
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in

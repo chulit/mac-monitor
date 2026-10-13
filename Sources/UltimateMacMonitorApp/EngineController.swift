@@ -14,6 +14,9 @@ final class EngineController: ObservableObject {
   @Published private(set) var memoryHistory: [(date: Date, value: Double)] = []
   @Published private(set) var diskHistory: [(date: Date, value: Double)] = []
   @Published private(set) var networkHistory: [(date: Date, value: Double)] = []
+  @Published private(set) var temperatureHistory: [(date: Date, value: Double)] = []
+  @Published private(set) var temperatureSecondaryHistory: [(date: Date, value: Double)] = []
+  @Published private(set) var temperatureStorageHistory: [(date: Date, value: Double)] = []
   @Published private(set) var baselineStatuses: [String: Baseline.Status] = [:]
   @Published private(set) var storageUnits = 0
   @Published private(set) var storageQuota = 150_000_000
@@ -23,6 +26,7 @@ final class EngineController: ObservableObject {
   private var host: HostCollector<SystemClock>
   private var processCollector = ProcessCollector()
   private var networkCollector = NetworkCollector()
+  private var temperatureCollector = TemperatureCollector()
   private var notifier = Notifier(
     policy: NotificationPolicy(cooldown: 900, highSeverityAfter: 300)
   )
@@ -30,12 +34,15 @@ final class EngineController: ObservableObject {
 
   init() {
     let clock = SystemClock()
-    // Full engine configuration per Ship-07 numeric decisions.
+    // Full engine configuration per Ship-07 numeric decisions. Rules stay
+    // scoped to fraction metrics: unbounded series (network) and physical
+    // units (temperature) would otherwise trip absolute thresholds.
     let rule = TechnicalRule(
       threshold: 0.9,
       triggerDuration: 30,
       recoveryDuration: 30,
-      cooldown: 900
+      cooldown: 900,
+      metrics: ["cpu", "memory", "disk"]
     )
     pipeline = Pipeline(
       clock: clock,
@@ -91,7 +98,9 @@ final class EngineController: ObservableObject {
 
   private func tick() {
     let now = Date()
-    let samples = host.collect(now: now) + networkCollector.collect(now: now)
+    let samples =
+      host.collect(now: now) + networkCollector.collect(now: now)
+      + temperatureCollector.collect(now: now)
     let activity = processCollector.collect(now: now)
     let usage = totalShare(
       processes: activity,
@@ -116,6 +125,18 @@ final class EngineController: ObservableObject {
     if let network = samples.first(where: { $0.metric == "network" && $0.availability == .available })?.value {
       networkHistory.append((date: now, value: network))
       networkHistory = Array(networkHistory.suffix(120))
+    }
+    if let temperature = samples.first(where: { $0.metric == "temperature" && $0.availability == .available })?.value {
+      temperatureHistory.append((date: now, value: temperature))
+      temperatureHistory = Array(temperatureHistory.suffix(120))
+    }
+    if let secondary = samples.first(where: { $0.metric == "temperature.secondary" && $0.availability == .available })?.value {
+      temperatureSecondaryHistory.append((date: now, value: secondary))
+      temperatureSecondaryHistory = Array(temperatureSecondaryHistory.suffix(120))
+    }
+    if let storage = samples.first(where: { $0.metric == "temperature.storage" && $0.availability == .available })?.value {
+      temperatureStorageHistory.append((date: now, value: storage))
+      temperatureStorageHistory = Array(temperatureStorageHistory.suffix(120))
     }
     baselineStatuses = pipeline.baselines.mapValues { $0.status }
     if let history = pipeline.history {
