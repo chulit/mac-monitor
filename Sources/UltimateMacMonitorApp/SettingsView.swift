@@ -152,30 +152,12 @@ struct SettingsView: View {
     .frame(width: 420)
   }
 
-  // TODO(issue-19): swap in the custom logo asset when it arrives; this
-  // placeholder keeps the layout honest until then.
   private var logoPlaceholder: some View {
     HStack(spacing: 12) {
-      RoundedRectangle(cornerRadius: 12)
-        .fill(
-          LinearGradient(
-            colors: [
-              Color(red: 0.04, green: 0.06, blue: 0.18),
-              Color(red: 0.10, green: 0.16, blue: 0.45),
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-          )
-        )
-        .frame(width: 48, height: 48)
-        .overlay(
-          Image(systemName: "waveform")
-            .font(.title3)
-            .foregroundStyle(Color(red: 0.35, green: 0.65, blue: 1.0))
-        )
+      AppLogo(size: 48)
       VStack(alignment: .leading, spacing: 2) {
         Text("Ultimate Mac Monitor").font(.headline)
-        Text("App logo arrives here").font(.caption).foregroundStyle(.secondary)
+        Text("Version \(SystemInfo.appVersion)").font(.caption).foregroundStyle(.secondary)
       }
     }
     .padding(.vertical, 4)

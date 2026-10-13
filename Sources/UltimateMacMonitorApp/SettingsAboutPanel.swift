@@ -32,24 +32,7 @@ struct SettingsAboutPanel: View {
   private var headerCard: some View {
     VStack(alignment: .leading, spacing: 10) {
       HStack(spacing: 14) {
-        RoundedRectangle(cornerRadius: 16)
-          .fill(
-            LinearGradient(
-              colors: [
-                Color(red: 0.04, green: 0.06, blue: 0.18),
-                Color(red: 0.10, green: 0.16, blue: 0.45),
-              ],
-              startPoint: .topLeading,
-              endPoint: .bottomTrailing
-            )
-          )
-          .frame(width: 64, height: 64)
-          .overlay(
-            Image(systemName: "waveform")
-              .font(.title)
-              .foregroundStyle(Color(red: 0.35, green: 0.65, blue: 1.0))
-          )
-          .accessibilityHidden(true)
+        AppLogo(size: 64)
         VStack(alignment: .leading, spacing: 4) {
           Text("Ultimate Mac Monitor")
             .font(.title3.bold())

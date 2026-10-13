@@ -81,23 +81,7 @@ struct RootView: View {
 
   private var appHeader: some View {
     HStack(spacing: 10) {
-      RoundedRectangle(cornerRadius: 10)
-        .fill(
-          LinearGradient(
-            colors: [
-              Color(red: 0.04, green: 0.06, blue: 0.18),
-              Color(red: 0.10, green: 0.16, blue: 0.45),
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-          )
-        )
-        .frame(width: 36, height: 36)
-        .overlay(
-          Image(systemName: "waveform")
-            .font(.body)
-            .foregroundStyle(Color(red: 0.35, green: 0.65, blue: 1.0))
-        )
+      AppLogo(size: 36)
       if controller.appearance.showSidebarLabels {
         Text("Ultimate Mac Monitor")
           .font(.headline)
