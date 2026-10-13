@@ -9,6 +9,7 @@ import MonitoringEngine
 final class EngineController: ObservableObject {
   @Published private(set) var evaluation: Evaluation?
   @Published private(set) var processes: [ProcessSample] = []
+  @Published private(set) var cpuShare: Double?
   @Published private(set) var baselineStatuses: [String: Baseline.Status] = [:]
   @Published private(set) var storageUnits = 0
   @Published private(set) var storageQuota = 150_000_000
@@ -90,6 +91,7 @@ final class EngineController: ObservableObject {
     let evaluation = pipeline.evaluate(samples, processes: activity, usage: usage)
     self.evaluation = evaluation
     processes = activity
+    cpuShare = samples.first { $0.metric == "cpu" && $0.availability == .available }?.value
     baselineStatuses = pipeline.baselines.mapValues { $0.status }
     if let history = pipeline.history {
       storageUnits = history.storageUnits
