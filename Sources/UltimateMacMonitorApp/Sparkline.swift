@@ -9,25 +9,9 @@ struct Sparkline: View {
   var tint: Color
 
   var body: some View {
-    GeometryReader { geometry in
-      let domain = chartDomain(values: values.map(\.value))
-      let span = max(domain.upperBound - domain.lowerBound, 1e-9)
-      let points = values.enumerated().map { index, entry in
-        CGPoint(
-          x: values.count > 1
-            ? geometry.size.width * Double(index) / Double(values.count - 1) : geometry.size.width / 2,
-          y: geometry.size.height * (1 - (entry.value - domain.lowerBound) / span)
-        )
-      }
-      ZStack {
-        fillPath(points: points, height: geometry.size.height)
-          .fill(tint.opacity(0.25))
-        linePath(points: points)
-          .stroke(tint, lineWidth: 1.5)
-      }
-    }
-    .frame(height: 28)
-    .clipped()
+    // BISECT ROUND 4 (Ship-21): Sparkline body disabled. If the popover
+    // lives, this body is the killer; helpers below go quiet meanwhile.
+    EmptyView().frame(height: 28)
   }
 
   private func linePath(points: [CGPoint]) -> Path {
