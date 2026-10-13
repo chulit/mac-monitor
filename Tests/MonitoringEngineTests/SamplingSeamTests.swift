@@ -1533,6 +1533,184 @@ struct SamplingSeamTests {
     #expect(reused == .identityChanged)
   }
 
+  @Test("Explanations separate facts, correlations, hypotheses, uncertainty, and gaps")
+  func explanationsSeparateEvidenceGrades() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 30
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    let memory = (0..<22).map { index in
+      let missing = index == 8
+      return Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: missing ? .unavailable : .available,
+        value: missing ? nil : 0.5,
+        metric: "memory"
+      )
+    }
+    let alpha = Process(id: "a", parent: nil, name: "Alpha")
+    let beta = Process(id: "b", parent: "d", name: "Beta")
+    let delta = Process(id: "d", parent: nil, name: "Delta")
+    var activity: [ProcessSample] = []
+    for index in 5..<16 {
+      let timestamp = start.addingTimeInterval(TimeInterval(index))
+      activity.append(ProcessSample(timestamp: timestamp, process: alpha, metric: "cpu", value: 0.5))
+      activity.append(ProcessSample(timestamp: timestamp, process: beta, metric: "cpu", value: 0.25))
+    }
+    for index in 0..<5 {
+      activity.append(
+        ProcessSample(
+          timestamp: start.addingTimeInterval(TimeInterval(index)),
+          process: delta,
+          metric: "cpu",
+          value: 0.1
+        )
+      )
+    }
+    let evaluation = pipeline.evaluate(cpu + memory, processes: activity)
+    let timeline = try #require(evaluation.timelines.first)
+    let explanation = makeExplanation(timeline)
+    #expect(
+      explanation.facts == [
+        "Incident observed from 1970-01-01T00:00:05Z to 1970-01-01T00:00:15Z.",
+        "cpu: 11 readings, min 0.3, max 0.99.",
+        "memory: 10 readings, min 0.5, max 0.5.",
+        "Alpha held the largest share (0.67) during the incident.",
+      ]
+    )
+    #expect(
+      explanation.correlations == [
+        "Alpha was active during the incident.",
+        "Beta was active during the incident.",
+        "Delta was active during the incident.",
+      ]
+    )
+    #expect(
+      explanation.hypotheses == [
+        "Possible cause (unproven): Alpha's resource use is related to this incident."
+      ]
+    )
+    #expect(explanation.uncertainty == ["Evidence is incomplete: 1 sample is missing."])
+    #expect(explanation.unavailable == ["sample missing at 1970-01-01T00:00:08Z."])
+    let empty = makeExplanation(
+      IncidentTimeline(
+        incident: Incident(startedAt: start, peakAt: start, recoveredAt: start, source: .rule(version: "1")),
+        metricSamples: [],
+        gaps: [],
+        markers: [],
+        ruleVersion: "1",
+        baselineVersion: nil,
+        relevantProcesses: []
+      )
+    )
+    #expect(empty.facts.contains("No readings recorded for this incident."))
+    #expect(empty.hypotheses == ["No hypothesis can be formed from the available evidence."])
+    #expect(empty.uncertainty.isEmpty)
+    #expect(empty.unavailable.isEmpty)
+  }
+
+  @Test("Notifications inform once with severity, then report recovery")
+  func notificationsInformOnce() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let policy = NotificationPolicy(cooldown: 30, highSeverityAfter: 60)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 5
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let cpu = SyntheticStream.scenario(.sustainedPressure, startingAt: start, spacing: 1.0).samples
+    var notifier = Notifier(policy: policy)
+    let partial = pipeline.evaluate(Array(cpu.prefix(13)))
+    let first = notifier.update(partial, now: start.addingTimeInterval(100))
+    #expect(first.count == 1)
+    let started = try #require(first.first)
+    #expect(started.kind == .anomalyStarted)
+    #expect(started.severity == .high)
+    #expect(started.incidentStartedAt == start.addingTimeInterval(5))
+    #expect(notifier.update(partial, now: start.addingTimeInterval(101)).isEmpty)
+    let full = pipeline.evaluate(cpu)
+    let second = notifier.update(full, now: start.addingTimeInterval(101))
+    #expect(second.count == 1)
+    let recovered = try #require(second.first)
+    #expect(recovered.kind == .anomalyRecovered)
+    #expect(recovered.severity == nil)
+    #expect(notifier.update(full, now: start.addingTimeInterval(102)).isEmpty)
+  }
+
+  @Test("Recurrence within cooldown stays silent and observation changes notify once")
+  func recurrenceAndObservationTransitions() throws {
+    let start = Date(timeIntervalSince1970: 0)
+    let clock = ControlledClock(startingAt: start)
+    let policy = NotificationPolicy(cooldown: 30, highSeverityAfter: 60)
+    let rule = TechnicalRule(
+      threshold: 0.8,
+      triggerDuration: 5,
+      recoveryDuration: 5,
+      cooldown: 5
+    )
+    let pipeline = Pipeline(clock: clock, rules: [rule])
+    let batch = (0..<40).map { index in
+      let critical = (5..<11).contains(index) || (20..<26).contains(index)
+      return Sample(
+        timestamp: start.addingTimeInterval(TimeInterval(index)),
+        availability: .available,
+        value: critical ? 0.9 : 0.3
+      )
+    }
+    var notifier = Notifier(policy: policy)
+    let partial = pipeline.evaluate(Array(batch.prefix(27)))
+    #expect(partial.incidents.count == 2)
+    let first = notifier.update(partial, now: start.addingTimeInterval(30))
+    #expect(first.count == 1)
+    #expect(first.first?.kind == .anomalyRecovered)
+    let full = pipeline.evaluate(batch)
+    let second = notifier.update(full, now: start.addingTimeInterval(40))
+    #expect(second.count == 1)
+    #expect(second.first?.kind == .anomalyRecovered)
+    #expect(second.first?.incidentStartedAt == start.addingTimeInterval(20))
+    let observationPolicy = ObservationPolicy(
+      budgetLimit: 1.0,
+      criticalMetrics: ["cpu"],
+      normalInterval: 1.0,
+      reducedInterval: 5.0,
+      highDetailInterval: 0.5,
+      overBudgetEvaluationsToDegrade: 2,
+      underBudgetEvaluationsToRecover: 2,
+      maximumHighDetailDuration: 60,
+      highDetailWarningBeforeEnd: 10
+    )
+    let observed = Pipeline(clock: clock, rules: [], observation: observationPolicy)
+    let calm = (0..<10).flatMap { index -> [Sample] in
+      let timestamp = start.addingTimeInterval(TimeInterval(index))
+      return [
+        Sample(timestamp: timestamp, availability: .available, value: 0.3, metric: "cpu"),
+        Sample(timestamp: timestamp, availability: .available, value: 0.5, metric: "memory"),
+      ]
+    }
+    let over = ResourceUsage(used: 2.0)
+    let under = ResourceUsage(used: 0.5)
+    #expect(notifier.update(observed.evaluate(calm, usage: under), now: start).isEmpty)
+    _ = notifier.update(observed.evaluate(calm, usage: over), now: start)
+    let limited = notifier.update(observed.evaluate(calm, usage: over), now: start)
+    #expect(limited.count == 1)
+    #expect(limited.first?.kind == .observationLimited)
+    #expect(limited.first?.detail?.contains("memory") == true)
+    _ = notifier.update(observed.evaluate(calm, usage: under), now: start)
+    let restored = notifier.update(observed.evaluate(calm, usage: under), now: start)
+    #expect(restored.count == 1)
+    #expect(restored.first?.kind == .observationRestored)
+    #expect(notifier.update(observed.evaluate(calm, usage: under), now: start).isEmpty)
+  }
+
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in
       let critical = criticalRanges.contains { $0.contains(index) }
       return Sample(

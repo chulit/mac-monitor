@@ -293,3 +293,87 @@ public func makeTimelinePoints(_ timeline: IncidentTimeline) -> [TimelinePoint] 
     )
   }
 }
+
+public struct Explanation: Sendable, Equatable {
+  public let facts: [String]
+  public let correlations: [String]
+  public let hypotheses: [String]
+  public let uncertainty: [String]
+  public let unavailable: [String]
+
+  public init(
+    facts: [String],
+    correlations: [String],
+    hypotheses: [String],
+    uncertainty: [String],
+    unavailable: [String]
+  ) {
+    self.facts = facts
+    self.correlations = correlations
+    self.hypotheses = hypotheses
+    self.uncertainty = uncertainty
+    self.unavailable = unavailable
+  }
+}
+
+func iso(_ date: Date) -> String {
+  ISO8601DateFormatter().string(from: date)
+}
+
+public func makeExplanation(_ timeline: IncidentTimeline) -> Explanation {
+  let incident = timeline.incident
+  var facts: [String] = []
+  if let recoveredAt = incident.recoveredAt {
+    facts.append("Incident observed from \(iso(incident.startedAt)) to \(iso(recoveredAt)).")
+  } else {
+    facts.append("Incident observed from \(iso(incident.startedAt)); still ongoing.")
+  }
+  let metrics = Set(timeline.metricSamples.map(\.metric)).sorted()
+  if metrics.isEmpty {
+    facts.append("No readings recorded for this incident.")
+  } else {
+    for metric in metrics {
+      let values = timeline.metricSamples.filter { $0.metric == metric }.compactMap(\.value)
+      guard !values.isEmpty, let min = values.min(), let max = values.max() else {
+        continue
+      }
+      facts.append("\(metric): \(values.count) readings, min \(min), max \(max).")
+    }
+  }
+  if let top = timeline.relevantProcesses.first {
+    let share = (top.contribution * 100).rounded() / 100
+    facts.append("\(top.process.name) held the largest share (\(share)) during the incident.")
+  }
+  let correlations = timeline.relevantProcesses.map {
+    "\($0.process.name) was active during the incident."
+  }
+  let hypotheses: [String]
+  if let top = timeline.relevantProcesses.first {
+    hypotheses = [
+      "Possible cause (unproven): \(top.process.name)'s resource use is related to this incident."
+    ]
+  } else {
+    hypotheses = ["No hypothesis can be formed from the available evidence."]
+  }
+  var uncertainty: [String] = []
+  if !timeline.gaps.isEmpty {
+    let count = timeline.gaps.count
+    uncertainty.append(
+      "Evidence is incomplete: \(count) sample\(count == 1 ? " is" : "s are") missing."
+    )
+  }
+  if !timeline.observationTransitions.isEmpty {
+    uncertainty.append("Observation quality changed during the incident.")
+  }
+  if incident.recoveredAt == nil {
+    uncertainty.append("The incident has not recovered; its full extent is unknown.")
+  }
+  let unavailable = timeline.gaps.map { "sample missing at \(iso($0.timestamp))." }
+  return Explanation(
+    facts: facts,
+    correlations: correlations,
+    hypotheses: hypotheses,
+    uncertainty: uncertainty,
+    unavailable: unavailable
+  )
+}

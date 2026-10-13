@@ -1,7 +1,7 @@
 import Foundation
 
-public struct Incident: Sendable, Equatable, Codable {
-  public enum Source: Sendable, Equatable {
+public struct Incident: Sendable, Equatable, Codable, Hashable {
+  public enum Source: Sendable, Equatable, Hashable {
     case rule(version: String)
     case baseline(version: String)
   }
