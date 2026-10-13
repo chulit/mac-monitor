@@ -13,9 +13,8 @@ struct PopoverView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       header
-      cards
-      // BISECT ROUND 2 (Ship-21): upper half only. Lower half
-      // (temperatureDetail, incidents, modeSection, actionRow) in git.
+      // BISECT ROUND 3 (Ship-21): header only. Cards (incl. Sparkline)
+      // rejoin one by one if this lives.
     }
     .padding(14)
     .frame(width: 640)
