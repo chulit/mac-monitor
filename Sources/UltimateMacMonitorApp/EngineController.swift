@@ -134,6 +134,12 @@ final class EngineController: ObservableObject {
     evaluation?.incidents.filter { $0.recoveredAt == nil } ?? []
   }
 
+  /// Recorded history (detail samples, compact summaries, incidents) for the
+  /// History screen. Read on demand so the per-tick publish cycle stays lean.
+  func historySnapshot() -> HistorySnapshot? {
+    pipeline.history
+  }
+
   var activeIncidentCount: Int {
     activeIncidents.count
   }
