@@ -2075,6 +2075,79 @@ struct SamplingSeamTests {
     #expect(report.results.first?.verdict == .unmeasured)
   }
 
+  @Test("Helper verdicts follow probe evidence, never assumption")
+  func helperVerdictsFollowEvidence() {
+    let start = Date(timeIntervalSince1970: 0)
+    let complete = PrivilegeProbe.assess(
+      systemSamples: [
+        Sample(timestamp: start, availability: .available, value: 0.3, metric: "cpu"),
+        Sample(timestamp: start, availability: .available, value: 0.5, metric: "memory"),
+      ],
+      processSamples: [
+        ProcessSample(
+          timestamp: start,
+          process: Process(id: "1", parent: nil, name: "launchd"),
+          metric: "cpu",
+          value: 0.1
+        )
+      ],
+      taskPortsAvailable: false
+    )
+    #expect(!complete.helperNeeded)
+    #expect(complete.assessments.count == 3)
+    #expect(complete.assessments.allSatisfy { $0.collectibleUnprivileged })
+    #expect(complete.rationale == "All MVP metrics collect without privileges; no helper ships.")
+    #expect(complete.notes.count == 1)
+    let gapped = PrivilegeProbe.assess(
+      systemSamples: [
+        Sample(timestamp: start, availability: .available, value: 0.3, metric: "cpu"),
+        Sample(timestamp: start, availability: .unavailable, value: nil, metric: "memory"),
+      ],
+      processSamples: [],
+      taskPortsAvailable: false
+    )
+    #expect(!gapped.helperNeeded)
+    #expect(gapped.rationale.contains("re-run"))
+    #expect(gapped.assessments.contains { !$0.collectibleUnprivileged })
+  }
+
+  @Test("Cross-process task ports are denied without privileges")
+  func crossProcessTaskPortsDenied() {
+    #expect(!PrivilegeProbe.crossProcessTaskPorts())
+  }
+
+  @Test("Live collectors feed a complete no-helper verdict")
+  func liveCollectorsFeedVerdict() throws {
+    let start = Date(timeIntervalSince1970: 5_000_000)
+    let clock = ControlledClock(startingAt: start)
+    var host = HostCollector(clock: clock)
+    var processes = ProcessCollector()
+    _ = host.collect(now: start)
+    _ = processes.collect(now: start)
+    var system: [Sample] = []
+    var activity: [ProcessSample] = []
+    for step in 0..<10 {
+      Thread.sleep(forTimeInterval: 0.05)
+      let moment = start.addingTimeInterval(TimeInterval(step + 1) * 0.05)
+      system = host.collect(now: moment)
+      activity = processes.collect(now: moment)
+      if system.first(where: { $0.metric == "cpu" })?.availability == .available,
+        !activity.isEmpty
+      {
+        break
+      }
+    }
+    let verdict = PrivilegeProbe.assess(
+      systemSamples: system,
+      processSamples: activity,
+      taskPortsAvailable: PrivilegeProbe.crossProcessTaskPorts()
+    )
+    #expect(verdict.assessments.count == 3)
+    #expect(!verdict.helperNeeded)
+    #expect(verdict.rationale.contains("no helper ships"))
+    #expect(verdict.notes.count == 1)
+  }
+
   private func episodeSamples(start: Date, count: Int, criticalRanges: [Range<Int>]) -> [Sample] {    (0..<count).map { index in
       let critical = criticalRanges.contains { $0.contains(index) }
       return Sample(
