@@ -14,7 +14,8 @@ struct PopoverView: View {
     VStack(alignment: .leading, spacing: 12) {
       header
       cards
-      temperatureDetail
+      // BISECT ROUND 5 (Ship-21): temperatureDetail removed alone.
+      // Sparkline stays live: exactly one variable differs from round 4.
       if let evaluation = controller.evaluation {
         let active = evaluation.incidents.filter { $0.recoveredAt == nil }
         if !active.isEmpty {
