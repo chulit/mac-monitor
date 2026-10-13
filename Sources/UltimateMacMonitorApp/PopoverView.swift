@@ -197,7 +197,7 @@ struct PopoverView: View {
   // MARK: Incidents
 
   private var activeIncidents: [Incident] {
-    controller.evaluation?.incidents.filter { $0.recoveredAt == nil } ?? []
+    controller.activeIncidents
   }
 
   private var incidentsSection: some View {
@@ -208,7 +208,7 @@ struct PopoverView: View {
           Text("Active Incidents").font(.headline)
           Spacer()
           Button {
-            openSection(.investigation)
+            openSection(.incidents)
           } label: {
             HStack(spacing: 3) {
               Text("See All")
@@ -351,10 +351,10 @@ struct PopoverView: View {
 
   private var actionRow: some View {
     HStack(spacing: 10) {
-      actionButton(title: "Open App", icon: "square.grid.2x2") { openSection(.dashboard) }
+      actionButton(title: "Open App", icon: "square.grid.2x2") { openSection(.overview) }
       actionButton(title: "Process Viewer", icon: "list.bullet") { openSection(.processes) }
       actionButton(title: "System Health", icon: "waveform.path.ecg") {
-        openSection(.investigation)
+        openSection(.incidents)
       }
     }
   }

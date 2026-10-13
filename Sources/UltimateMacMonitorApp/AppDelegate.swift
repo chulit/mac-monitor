@@ -96,10 +96,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     AppLog.event("toggle shown")
   }
 
-  /// Opens the settings window behind the gear button (issue 19). The window
-  /// is created once and reused so its controls stay bound to the same store
-  /// the collection timer reads.
-  private func openSettings() {
+  /// Opens the settings window behind the gear button (issue 19) and the
+  /// sidebar Settings row (overview issue 01). The window is created once
+  /// and reused so its controls stay bound to the same store the collection
+  /// timer reads.
+  func openSettings() {
     guard let settings = controller?.settings else {
       AppLog.event("openSettings aborted: no controller")
       return

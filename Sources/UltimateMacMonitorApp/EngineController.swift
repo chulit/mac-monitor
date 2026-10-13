@@ -117,6 +117,16 @@ final class EngineController: ObservableObject {
     pipeline.requestHighDetail(duration: seconds)
   }
 
+  /// Incidents that have not recovered: the sidebar badge and the popover
+  /// incident card read this instead of filtering the evaluation themselves.
+  var activeIncidents: [Incident] {
+    evaluation?.incidents.filter { $0.recoveredAt == nil } ?? []
+  }
+
+  var activeIncidentCount: Int {
+    activeIncidents.count
+  }
+
   /// Restarts collection when the settings window picks a new cadence.
   /// Anything else (launch at login, restore of an unchanged interval) leaves
   /// the running timer alone.

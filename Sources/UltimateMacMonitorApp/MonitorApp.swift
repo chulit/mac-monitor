@@ -7,11 +7,15 @@ struct MonitorApp: App {
 
   var body: some Scene {
     WindowGroup {
-      RootView(controller: controller, store: delegate.navigation)
-        .onAppear {
-          delegate.bind(controller)
-          controller.start()
-        }
+      RootView(
+        controller: controller,
+        store: delegate.navigation,
+        onOpenSettings: { delegate.openSettings() }
+      )
+      .onAppear {
+        delegate.bind(controller)
+        controller.start()
+      }
     }
   }
 }
