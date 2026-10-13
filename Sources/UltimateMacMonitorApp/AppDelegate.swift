@@ -76,14 +76,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       popover.performClose(nil)
       return
     }
-    guard controller != nil else {
+    guard let controller else {
       AppLog.event("toggle aborted: no controller")
       return
     }
-    // BISECT ROUND 1 (Ship-21): minimal content isolates a content-side
-    // crash from a hosting/show-side one. Restore PopoverView below.
     popover.contentViewController = NSHostingController(
-      rootView: Text("probe").frame(width: 200, height: 60).padding()
+      rootView: PopoverView(
+        controller: controller,
+        openSection: { [weak self] section in self?.openMonitor(section: section) },
+        onQuit: {
+          AppLog.event("quit requested")
+          NSApp.terminate(nil)
+        }
+      )
     )
     popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
     AppLog.event("toggle shown")
