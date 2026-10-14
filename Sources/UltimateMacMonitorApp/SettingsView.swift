@@ -118,7 +118,7 @@ struct SettingsView: View {
   var body: some View {
     Form {
       Section("General") {
-        logoPlaceholder
+        logoHeader
         Toggle("Launch at login", isOn: $viewModel.launchAtLogin)
           .onChange(of: viewModel.launchAtLogin) { viewModel.setLaunchAtLogin($0) }
           .help("Start Ultimate Mac Monitor when you log in.")
@@ -152,7 +152,7 @@ struct SettingsView: View {
     .frame(width: 420)
   }
 
-  private var logoPlaceholder: some View {
+  private var logoHeader: some View {
     HStack(spacing: 12) {
       AppLogo(size: 48)
       VStack(alignment: .leading, spacing: 2) {

@@ -10,6 +10,16 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp .build/release/UltimateMacMonitorApp "$APP/Contents/MacOS/UltimateMacMonitor"
 cp packaging/Info.plist "$APP/Contents/Info.plist"
+# Target resources (AppIcon.png/.icns): SwiftPM emits them as
+# <package>_<target>.bundle next to the binary; Bundle.module looks the
+# bundle up inside Contents/Resources, so copy it whole. CFBundleIconFile
+# additionally needs AppIcon.icns directly in Contents/Resources.
+mkdir -p "$APP/Contents/Resources"
+for b in .build/release/*.bundle; do
+  [ -e "$b" ] || continue
+  cp -R "$b" "$APP/Contents/Resources/"
+  [ -f "$b/AppIcon.icns" ] && cp "$b/AppIcon.icns" "$APP/Contents/Resources/"
+done
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 echo "Built $APP"
