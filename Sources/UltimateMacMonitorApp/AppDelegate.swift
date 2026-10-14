@@ -26,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       item.button?.title = "–"
       item.button?.action = #selector(togglePopover(_:))
       item.button?.target = self
+      // Left click toggles the popover; right click shows the context menu.
+      item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
       return item
     }
     statusItems.first?.button?.image = NSImage(
@@ -73,6 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   @objc private func togglePopover(_ sender: NSStatusBarButton) {
     AppLog.event("toggle isShown=\(popover.isShown)")
+    if NSApp.currentEvent?.type == .rightMouseUp {
+      showContextMenu(sender)
+      return
+    }
     if popover.isShown {
       popover.performClose(nil)
       return
@@ -94,6 +100,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
     AppLog.event("toggle shown")
+  }
+
+  /// Right-click context menu: Settings… and Quit, anchored to the
+  /// status-item button that was clicked.
+  private func showContextMenu(_ sender: NSStatusBarButton) {
+    guard let event = NSApp.currentEvent else {
+      AppLog.event("context menu aborted: no event")
+      return
+    }
+    AppLog.event("context menu")
+    let menu = MenuBarContextMenu.make(
+      target: self,
+      settingsAction: #selector(openSettingsFromMenu),
+      quitAction: #selector(quitFromMenu)
+    )
+    NSMenu.popUpContextMenu(menu, with: event, for: sender)
+  }
+
+  @objc private func openSettingsFromMenu() {
+    openSettings()
+  }
+
+  @objc private func quitFromMenu() {
+    AppLog.event("quit requested")
+    NSApp.terminate(nil)
   }
 
   /// Opens the settings window behind the gear button (issue 19) and the

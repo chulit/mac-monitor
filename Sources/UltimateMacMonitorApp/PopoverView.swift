@@ -1,55 +1,40 @@
 import SwiftUI
 import MonitoringEngine
 
-/// Menu-bar popover following `docs/plans/design/1. menu-bar`: header,
-/// metric cards, temperature detail, active incidents, monitoring mode,
-/// and action buttons. Cards show live data where collectors exist and
-/// honest unavailable states where they don't (performance/efficiency
-/// cluster and GPU sensors do not exist on this model).
+/// Menu-bar popover following the dark-mode design: header, 2x2 metric
+/// cards, temperature card, system details, active incidents, monitoring
+/// mode, and action buttons. Cards show live data where collectors exist
+/// and honest "–" states where they don't (per-cluster CPU and GPU
+/// sensors do not exist on this model).
 struct PopoverView: View {
   @ObservedObject var controller: EngineController
   var openSection: (AppSection) -> Void
   var onOpenSettings: () -> Void
   var onQuit: () -> Void
 
-  @State private var temperatureExpanded = true
+  @State private var detailsExpanded = true
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 14) {
+    VStack(alignment: .leading, spacing: 12) {
       header
-      cards
-      temperatureSection
+      cardsGrid
+      temperatureCard
+      systemDetails
       incidentsSection
       modeSection
       actionRow
     }
     .padding(16)
-    .frame(width: 700)
+    .frame(width: 400)
   }
 
   // MARK: Header
 
   private var header: some View {
     HStack(spacing: 12) {
-      RoundedRectangle(cornerRadius: 12)
-        .fill(
-          LinearGradient(
-            colors: [
-              Color(red: 0.04, green: 0.06, blue: 0.18),
-              Color(red: 0.10, green: 0.16, blue: 0.45),
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-          )
-        )
-        .frame(width: 44, height: 44)
-        .overlay(
-          Image(systemName: "waveform")
-            .font(.title3)
-            .foregroundStyle(Color(red: 0.35, green: 0.65, blue: 1.0))
-        )
+      AppLogo(size: 44)
       VStack(alignment: .leading, spacing: 3) {
-        Text("Ultimate Mac Monitor").font(.title3.bold())
+        Text("Ultimate Mac Monitor").font(.headline)
         if let evaluation = controller.evaluation {
           let status = makeMonitoringStatus(evaluation.observation)
           HStack(spacing: 6) {
@@ -71,20 +56,37 @@ struct PopoverView: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel("Settings")
+      Menu {
+        Button("Settings…") { onOpenSettings() }
+        Divider()
+        Button("Quit Ultimate Mac Monitor", role: .destructive) { onQuit() }
+      } label: {
+        Image(systemName: "ellipsis")
+          .font(.body)
+          .foregroundStyle(.primary)
+          .frame(width: 36, height: 36)
+          .background(.thinMaterial, in: Circle())
+          .overlay(Circle().stroke(Color.gray.opacity(0.15)))
+      }
+      .accessibilityLabel("More options")
     }
   }
 
   // MARK: Metric cards
 
-  private var cards: some View {
-    HStack(spacing: 10) {
+  private var cardsGrid: some View {
+    LazyVGrid(
+      columns: [GridItem(.flexible()), GridItem(.flexible())],
+      spacing: 10
+    ) {
       metricCard(
         title: "CPU", icon: "cpu", tint: .blue,
         value: percent(controller.cpuShare), history: controller.cpuHistory
       )
       metricCard(
         title: "Memory", icon: "memorychip", tint: .purple,
-        value: percent(controller.memoryHistory.last?.value), history: controller.memoryHistory
+        value: percent(controller.memoryHistory.last?.value),
+        history: controller.memoryHistory
       )
       metricCard(
         title: "Disk", icon: "internaldrive", tint: .green,
@@ -92,11 +94,8 @@ struct PopoverView: View {
       )
       metricCard(
         title: "Network", icon: "arrow.up.arrow.down", tint: .blue,
-        value: rate(controller.networkHistory.last?.value), history: controller.networkHistory
-      )
-      metricCard(
-        title: "Temperature", icon: "thermometer", tint: .orange,
-        value: temperatureValue, history: controller.temperatureHistory
+        value: rate(controller.networkHistory.last?.value),
+        history: controller.networkHistory
       )
     }
   }
@@ -125,6 +124,26 @@ struct PopoverView: View {
     .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
   }
 
+  private var temperatureCard: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 6) {
+        Image(systemName: "thermometer")
+          .font(.caption)
+          .foregroundStyle(.orange)
+          .frame(width: 24, height: 24)
+          .background(Color.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: 7))
+        Text("Temperature").font(.caption).foregroundStyle(.secondary)
+      }
+      HStack(spacing: 12) {
+        Text(temperatureValue).font(.title.bold().monospacedDigit())
+        Sparkline(values: controller.temperatureHistory, tint: .orange)
+      }
+    }
+    .padding(10)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+  }
+
   private var temperatureValue: String {
     guard controller.temperatureFresh, let last = controller.temperatureHistory.last else {
       return "–"
@@ -132,64 +151,76 @@ struct PopoverView: View {
     return "\(Int(last.value.rounded()))°C"
   }
 
-  // MARK: Temperature detail
+  // MARK: System details
 
-  private var temperatureSection: some View {
+  private var systemDetails: some View {
     sectionCard {
       VStack(alignment: .leading, spacing: 12) {
         Button {
-          temperatureExpanded.toggle()
+          detailsExpanded.toggle()
         } label: {
           HStack(spacing: 8) {
             Image(systemName: "thermometer").font(.callout).foregroundStyle(.orange)
-            Text("Temperature").font(.headline)
+            Text("System Details").font(.headline)
             Spacer()
             Image(systemName: "chevron.right")
               .font(.caption)
               .foregroundStyle(.secondary)
+              .rotationEffect(.degrees(detailsExpanded ? 90 : 0))
           }
           .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        if temperatureExpanded {
-          temperatureRow(label: "CPU (Average)", value: controller.temperatureHistory.last?.value)
-          temperatureRow(label: "CPU (Performance)", value: nil)
-          temperatureRow(label: "CPU (Efficiency)", value: nil)
-          temperatureRow(label: "GPU", value: nil)
-          temperatureRow(label: "SSD", value: controller.temperatureStorageHistory.last?.value)
+        .accessibilityLabel("System Details")
+        if detailsExpanded {
+          detailRow(
+            label: "CPU (Average)",
+            value: controller.temperatureHistory.last?.value,
+            tint: .orange, unit: "°C"
+          )
+          detailRow(
+            label: "CPU (Performance)", value: nil, tint: .blue, unit: "%"
+          )
+          detailRow(
+            label: "CPU (Efficiency)", value: nil, tint: .cyan, unit: "%"
+          )
+          detailRow(label: "GPU", value: nil, tint: .purple, unit: "%")
+          detailRow(
+            label: "SSD",
+            value: controller.temperatureStorageHistory.last?.value,
+            tint: .orange, unit: "°C"
+          )
         }
       }
     }
   }
 
-  private func temperatureRow(label: String, value: Double?) -> some View {
+  private func detailRow(label: String, value: Double?, tint: Color, unit: String) -> some View {
     HStack(spacing: 12) {
       Text(label)
         .font(.callout)
         .foregroundStyle(.secondary)
-        .frame(width: 170, alignment: .leading)
+        .frame(width: 140, alignment: .leading)
       if let value {
         GeometryReader { geometry in
           ZStack(alignment: .leading) {
             Capsule().fill(Color.gray.opacity(0.18))
             Capsule()
-              .fill(Color.orange)
+              .fill(tint)
               .frame(width: geometry.size.width * min(max(value / 100, 0), 1))
           }
         }
         .frame(height: 10)
-        Text("\(Int(value.rounded()))°C")
+        Text("\(Int(value.rounded()))\(unit)")
           .font(.callout.monospacedDigit())
           .frame(width: 60, alignment: .trailing)
       } else {
-        Text("Unavailable on this Mac")
-          .font(.callout)
-          .foregroundStyle(.tertiary)
         Spacer()
         Text("–")
           .font(.callout)
           .foregroundStyle(.tertiary)
           .frame(width: 60, alignment: .trailing)
+          .accessibilityLabel("\(label) unavailable on this Mac")
       }
     }
   }
@@ -220,9 +251,19 @@ struct PopoverView: View {
           .buttonStyle(.plain)
         }
         if activeIncidents.isEmpty {
-          Text("No active incidents")
-            .font(.callout)
-            .foregroundStyle(.secondary)
+          HStack(spacing: 12) {
+            Image(systemName: "checkmark.circle")
+              .font(.title)
+              .foregroundStyle(.green)
+              .frame(width: 44, height: 44)
+              .background(Color.green.opacity(0.12), in: Circle())
+            VStack(alignment: .leading, spacing: 2) {
+              Text("No active incidents").font(.callout.bold())
+              Text("Your Mac is running smoothly.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
         } else {
           ForEach(Array(activeIncidents.prefix(3).enumerated()), id: \.offset) { _, incident in
             incidentRow(incident)
@@ -266,17 +307,23 @@ struct PopoverView: View {
         }
         HStack(spacing: 10) {
           modeCard(
-            title: "Normal", caption: "Balanced for everyday use",
+            title: "Normal", caption: "Balanced use",
             active: currentMode == .normal, tint: .blue
-          )
+          ) {
+            controller.settings.setMonitoringMode(.normal)
+          }
           modeCard(
             title: "Reduced", caption: "Lower overhead",
             active: currentMode == .reduced, tint: .gray
-          )
+          ) {
+            controller.settings.setMonitoringMode(.reduced)
+          }
           modeCard(
-            title: "High Detail", caption: "More data for investigation",
+            title: "High Detail", caption: "More data",
             active: currentMode == .highDetail, tint: .orange
-          )
+          ) {
+            controller.requestHighDetail(seconds: 1800)
+          }
         }
         HStack {
           Text("Auto reverts after 30 minutes")
@@ -306,45 +353,84 @@ struct PopoverView: View {
     }
   }
 
-  private func modeCard(title: String, caption: String, active: Bool, tint: Color) -> some View {
-    HStack(spacing: 6) {
-      Circle().fill(active ? tint : Color.gray.opacity(0.4)).frame(width: 9, height: 9)
-      VStack(alignment: .leading, spacing: 1) {
-        Text(title).font(.callout.bold())
-        Text(caption).font(.caption2).foregroundStyle(.secondary)
+  private func modeCard(
+    title: String,
+    caption: String,
+    active: Bool,
+    tint: Color,
+    select: @escaping () -> Void
+  ) -> some View {
+    Button(action: select) {
+      HStack(spacing: 8) {
+        ZStack {
+          Circle()
+            .stroke(active ? tint : Color.gray.opacity(0.4), lineWidth: 2)
+            .frame(width: 16, height: 16)
+          if active {
+            Circle().fill(tint).frame(width: 8, height: 8)
+          }
+        }
+        VStack(alignment: .leading, spacing: 1) {
+          Text(title).font(.callout.bold())
+          Text(caption).font(.caption2).foregroundStyle(.secondary)
+        }
+        Spacer()
       }
-      Spacer()
+      .padding(10)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+      .overlay(
+        RoundedRectangle(cornerRadius: 12)
+          .stroke(active ? tint.opacity(0.5) : Color.gray.opacity(0.15))
+      )
     }
-    .padding(10)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-    .overlay(
-      RoundedRectangle(cornerRadius: 12)
-        .stroke(active ? tint.opacity(0.5) : Color.gray.opacity(0.15))
-    )
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(title) monitoring mode")
   }
 
   // MARK: Actions
 
   private var actionRow: some View {
     HStack(spacing: 10) {
-      actionButton(title: "Open App", icon: "square.grid.2x2") { openSection(.overview) }
-      actionButton(title: "Process Viewer", icon: "list.bullet") { openSection(.processes) }
-      actionButton(title: "System Health", icon: "waveform.path.ecg") {
+      actionButton(title: "Open App", subtitle: "Launch the full app", icon: "square.grid.2x2") {
+        openSection(.overview)
+      }
+      actionButton(
+        title: "Process Viewer", subtitle: "Monitor processes", icon: "list.bullet"
+      ) {
+        openSection(.processes)
+      }
+      actionButton(
+        title: "System Health", subtitle: "Detailed diagnostics", icon: "waveform.path.ecg"
+      ) {
         openSection(.incidents)
       }
     }
   }
 
-  private func actionButton(title: String, icon: String, action: @escaping () -> Void) -> some View {
+  private func actionButton(
+    title: String,
+    subtitle: String,
+    icon: String,
+    action: @escaping () -> Void
+  ) -> some View {
     Button(action: action) {
-      HStack(spacing: 8) {
-        Image(systemName: icon).foregroundStyle(Color.accentColor)
-        Text(title)
+      HStack(spacing: 10) {
+        Image(systemName: icon)
+          .font(.title3)
+          .foregroundStyle(Color.accentColor)
+          .frame(width: 28)
+        VStack(alignment: .leading, spacing: 1) {
+          Text(title).font(.callout.bold())
+          Text(subtitle).font(.caption2).foregroundStyle(.secondary)
+        }
+        Spacer()
+        Image(systemName: "chevron.right")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
       }
-      .font(.callout)
-      .frame(maxWidth: .infinity)
-      .padding(.vertical, 10)
+      .padding(10)
+      .frame(maxWidth: .infinity, alignment: .leading)
       .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
       .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.15)))
     }
