@@ -497,7 +497,7 @@ struct HistoryDetailView: View {
       let package = try IncidentArchive().export(
         timeline,
         summaries: snapshot.summaries,
-        redactProcessNames: controller.settings.settings.hideSensitiveInfo,
+        redactProcessNames: controller.hidesSensitiveInfo,
         now: Date()
       )
       let data = try package.encoded()

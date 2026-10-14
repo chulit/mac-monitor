@@ -32,24 +32,7 @@ struct SettingsAboutPanel: View {
   private var headerCard: some View {
     VStack(alignment: .leading, spacing: 10) {
       HStack(spacing: 14) {
-        RoundedRectangle(cornerRadius: 16)
-          .fill(
-            LinearGradient(
-              colors: [
-                Color(red: 0.04, green: 0.06, blue: 0.18),
-                Color(red: 0.10, green: 0.16, blue: 0.45),
-              ],
-              startPoint: .topLeading,
-              endPoint: .bottomTrailing
-            )
-          )
-          .frame(width: 64, height: 64)
-          .overlay(
-            Image(systemName: "waveform")
-              .font(.title)
-              .foregroundStyle(Color(red: 0.35, green: 0.65, blue: 1.0))
-          )
-          .accessibilityHidden(true)
+        AppLogo(size: 64)
         VStack(alignment: .leading, spacing: 4) {
           Text("Ultimate Mac Monitor")
             .font(.title3.bold())
@@ -132,21 +115,30 @@ struct SettingsAboutPanel: View {
   }
 
   private var whatsNewCard: some View {
-    SettingsCard(title: "What's New") {
-      VStack(alignment: .leading, spacing: 8) {
-        changelogEntry(
-          version: "v0.1.0",
-          date: "In development",
-          items: [
-            "App Utama modules: Overview, Processes, Incidents, History, and Settings.",
-            "Retention-backed history with per-module pull requests.",
-            "Incident package export and share workflow.",
-            "Live settings: alert thresholds, sampling cadences, retention, and appearance.",
-          ],
-          current: true
-        )
+    VStack(alignment: .leading, spacing: 8) {
+      HStack {
+        Text("What's New")
+          .font(.headline)
+        Spacer()
+        Button("View All Updates >") {
+          NSWorkspace.shared.open(SystemInfo.releasesURL)
+        }
+        .buttonStyle(.link)
+        .font(.callout)
       }
+      changelogEntry(
+        version: "v0.1.0",
+        date: "In development",
+        items: [
+          "App Utama modules: Overview, Processes, Incidents, History, and Settings.",
+          "Retention-backed history with per-module pull requests.",
+          "Incident package export and share workflow.",
+          "Live settings: alert thresholds, sampling cadences, retention, and appearance.",
+        ],
+        current: true
+      )
     }
+    .dashboardCardStyle()
   }
 
   private func changelogEntry(

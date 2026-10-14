@@ -45,8 +45,20 @@ public enum AppTheme: String, Codable, Sendable, CaseIterable {
   }
 }
 
-public enum InterfaceDensity: String, Codable, Sendable, CaseIterable {
-  case `default`
+/// Accent color choices. Raw values match the previously stored strings,
+/// so settings persisted before this type existed still decode.
+public enum AccentColorName: String, Codable, Sendable, CaseIterable {
+  case blue
+  case purple
+  case pink
+  case orange
+  case yellow
+  case green
+  case cyan
+  case multicolor
+}
+
+public enum InterfaceDensity: String, Codable, Sendable, CaseIterable {  case `default`
   case compact
   case spacious
 
@@ -105,20 +117,19 @@ public enum AlertType: String, Codable, Sendable, CaseIterable {
 /// Maps an incident metric to the alert type that gates its notifications.
 /// Returns nil for metrics with no alert type: those notices are never
 /// suppressed by the alert-type filter.
-public func alertTypeID(forMetric metric: String?) -> String? {
+public func alertTypeID(forMetric metric: String?) -> AlertType? {
   switch metric {
-  case "cpu": return AlertType.highCPU.rawValue
-  case "memory": return AlertType.highMemory.rawValue
-  case "disk": return AlertType.highDisk.rawValue
-  case "network": return AlertType.networkActivity.rawValue
-  case "temperature": return AlertType.highTemperature.rawValue
+  case "cpu": return .highCPU
+  case "memory": return .highMemory
+  case "disk": return .highDisk
+  case "network": return .networkActivity
+  case "temperature": return .highTemperature
   default: return nil
   }
 }
 
 /// Pure per-metric cadence gate for the collection tick.
 public func metricIsDue(
-  metric: String,
   lastFire: Date?,
   now: Date,
   interval: TimeInterval,
@@ -171,7 +182,7 @@ public struct MonitorSettings: Codable, Equatable, Sendable {
   public var thresholdDisk: Double = 0.90
   public var thresholdNetwork: Double = 100_000_000
   public var thresholdTemperature: Double = 85
-  public var enabledAlertTypes: Set<String> = Set(AlertType.allCases.map(\.rawValue))
+  public var enabledAlertTypes: Set<AlertType> = Set(AlertType.allCases)
 
   // MARK: Data & Storage
   public var retentionDays: Int = 30
@@ -182,7 +193,7 @@ public struct MonitorSettings: Codable, Equatable, Sendable {
 
   // MARK: Appearance
   public var theme: AppTheme = .auto
-  public var accentColor: String = "blue"
+  public var accentColor: AccentColorName = .blue
   public var density: InterfaceDensity = .default
   public var showSidebarLabels: Bool = true
   public var compactSidebar: Bool = false
@@ -232,8 +243,8 @@ public struct MonitorSettings: Codable, Equatable, Sendable {
     }
   }
 
-  public func isAlertTypeEnabled(_ id: String) -> Bool {
-    enabledAlertTypes.contains(id)
+  public func isAlertTypeEnabled(_ type: AlertType) -> Bool {
+    enabledAlertTypes.contains(type)
   }
 }
 
@@ -291,7 +302,13 @@ public final class SettingsStore {
   public func setSamplingInterval(_ interval: TimeInterval) {
     guard interval != settings.samplingInterval else { return }
     guard MonitorSettings.intervalOptions.contains(interval) else { return }
-    update(MonitorSettings(launchAtLogin: settings.launchAtLogin, samplingInterval: interval))
+    var next = settings
+    next.samplingInterval = interval
+    // Keep the mode in sync: each Ship-07 cadence belongs to exactly one mode.
+    if let mode = MonitoringMode.allCases.first(where: { $0.samplingInterval == interval }) {
+      next.monitoringMode = mode
+    }
+    update(next)
   }
 
   /// Plain persisted value: no side effects beyond persistence and the

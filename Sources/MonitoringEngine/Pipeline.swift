@@ -160,6 +160,26 @@ public final class Pipeline<C: Clock> {
     observationPolicy = policy
   }
 
+  /// Live critical-metrics change (Settings → Monitored Metrics). A metric
+  /// the user disabled stops being exempt from observation degradation.
+  public func updateCriticalMetrics(_ metrics: Set<String>) {
+    guard var policy = observationPolicy else {
+      return
+    }
+    policy = ObservationPolicy(
+      budgetLimit: policy.budgetLimit,
+      criticalMetrics: metrics,
+      normalInterval: policy.normalInterval,
+      reducedInterval: policy.reducedInterval,
+      highDetailInterval: policy.highDetailInterval,
+      overBudgetEvaluationsToDegrade: policy.overBudgetEvaluationsToDegrade,
+      underBudgetEvaluationsToRecover: policy.underBudgetEvaluationsToRecover,
+      maximumHighDetailDuration: policy.maximumHighDetailDuration,
+      highDetailWarningBeforeEnd: policy.highDetailWarningBeforeEnd
+    )
+    observationPolicy = policy
+  }
+
   /// Drops all recorded history (Settings → Clear History). Live
   /// baselines and the current evaluation are untouched.
   public func clearHistory() {

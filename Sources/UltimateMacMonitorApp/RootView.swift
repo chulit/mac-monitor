@@ -6,7 +6,6 @@ import SwiftUI
 struct RootView: View {
   @ObservedObject var controller: EngineController
   @ObservedObject var store: NavigationStore
-  var onOpenSettings: () -> Void = {}
 
   var body: some View {
     settingsThemed(splitView)
@@ -55,7 +54,7 @@ struct RootView: View {
     let themed = content
       .preferredColorScheme(themeScheme)
       .controlSize(densityControlSize)
-    if let accent = accentColor(for: controller.appearance.accentColor) {
+    if let accent = controller.appearance.accentColor.swiftUIColor {
       themed.tint(accent)
     } else {
       themed
@@ -78,40 +77,11 @@ struct RootView: View {
     }
   }
 
-  private func accentColor(for name: String) -> Color? {
-    switch name {
-    case "blue": return .blue
-    case "purple": return .purple
-    case "pink": return .pink
-    case "orange": return .orange
-    case "yellow": return .yellow
-    case "green": return .green
-    case "cyan": return .cyan
-    default: return nil
-    }
-  }
-
   // MARK: Sidebar
 
   private var appHeader: some View {
     HStack(spacing: 10) {
-      RoundedRectangle(cornerRadius: 10)
-        .fill(
-          LinearGradient(
-            colors: [
-              Color(red: 0.04, green: 0.06, blue: 0.18),
-              Color(red: 0.10, green: 0.16, blue: 0.45),
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-          )
-        )
-        .frame(width: 36, height: 36)
-        .overlay(
-          Image(systemName: "waveform")
-            .font(.body)
-            .foregroundStyle(Color(red: 0.35, green: 0.65, blue: 1.0))
-        )
+      AppLogo(size: 36)
       if controller.appearance.showSidebarLabels {
         Text("Ultimate Mac Monitor")
           .font(.headline)

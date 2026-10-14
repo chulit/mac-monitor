@@ -23,10 +23,10 @@ struct SettingsMonitoringPanel: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      monitoringModeCard(viewModel: viewModel)
+      MonitoringModeSelector(viewModel: viewModel)
       samplingIntervalsCard
       monitoredMetricsCard
-      resourceLimitsCard(viewModel: viewModel)
+      ResourceLimitsSliders(viewModel: viewModel)
     }
   }
 

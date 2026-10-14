@@ -6,7 +6,8 @@
 
 **Status:** ready-for-agent
 
-- [x] "App Behavior" card with toggles: Launch at login, Show in menu bar, Check for updates automatically, and Language selector ("English")
+- [x] "App Behavior" card with toggles: Launch at login, Check for updates automatically, and Language selector ("English")
+  - "Show in menu bar" DIIHILANGKAN (wontfix): app ini WindowGroup tanpa menu-bar UI; toggle-nya tidak bisa jujur.
 - [x] "Monitoring Mode" card with selectable mode boxes: Normal (balanced), Reduced (lower overhead), and High Detail (more data for investigation)
 - [x] "Resource Limits" card with sliders: Max CPU Usage (10%) and Max Memory Usage (500 MB)
 - [x] "Reset" card with "Reset to Default" button

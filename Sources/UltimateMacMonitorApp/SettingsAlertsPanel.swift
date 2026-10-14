@@ -147,14 +147,14 @@ struct SettingsAlertsPanel: View {
         ForEach(AlertType.allCases, id: \.self) { type in
           HStack(spacing: 10) {
             Button {
-              viewModel.toggleAlertType(type.rawValue)
+              viewModel.toggleAlertType(type)
             } label: {
               Image(
-                systemName: viewModel.current.isAlertTypeEnabled(type.rawValue)
+                systemName: viewModel.current.isAlertTypeEnabled(type)
                   ? "checkmark.square.fill" : "square"
               )
               .foregroundStyle(
-                viewModel.current.isAlertTypeEnabled(type.rawValue)
+                viewModel.current.isAlertTypeEnabled(type)
                   ? Color.accentColor : .secondary
               )
               .font(.title3)
