@@ -26,6 +26,7 @@ struct PopoverView: View {
     }
     .padding(16)
     .frame(width: 400)
+    .preferredColorScheme(.dark)  // the design is dark-mode; keep it legible
   }
 
   // MARK: Header
@@ -68,6 +69,7 @@ struct PopoverView: View {
           .background(.thinMaterial, in: Circle())
           .overlay(Circle().stroke(Color.gray.opacity(0.15)))
       }
+      .menuStyle(.borderlessButton)
       .accessibilityLabel("More options")
     }
   }
@@ -371,8 +373,15 @@ struct PopoverView: View {
           }
         }
         VStack(alignment: .leading, spacing: 1) {
-          Text(title).font(.callout.bold())
-          Text(caption).font(.caption2).foregroundStyle(.secondary)
+          Text(title)
+            .font(.footnote.bold())
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+          Text(caption)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
         }
         Spacer()
       }
@@ -415,22 +424,24 @@ struct PopoverView: View {
     action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
-      HStack(spacing: 10) {
+      VStack(spacing: 6) {
         Image(systemName: icon)
-          .font(.title3)
+          .font(.title2)
           .foregroundStyle(Color.accentColor)
-          .frame(width: 28)
-        VStack(alignment: .leading, spacing: 1) {
-          Text(title).font(.callout.bold())
-          Text(subtitle).font(.caption2).foregroundStyle(.secondary)
+        VStack(spacing: 1) {
+          Text(title)
+            .font(.footnote.bold())
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+          Text(subtitle)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
         }
-        Spacer()
-        Image(systemName: "chevron.right")
-          .font(.caption)
-          .foregroundStyle(.tertiary)
       }
-      .padding(10)
-      .frame(maxWidth: .infinity, alignment: .leading)
+      .frame(maxWidth: .infinity)
+      .padding(.vertical, 10)
       .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
       .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.15)))
     }
