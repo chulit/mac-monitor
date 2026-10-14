@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import MonitoringEngine
 
@@ -5,7 +6,8 @@ import MonitoringEngine
 /// cards, temperature card, system details, active incidents, monitoring
 /// mode, and action buttons. Cards show live data where collectors exist
 /// and honest "–" states where they don't (per-cluster CPU and GPU
-/// sensors do not exist on this model).
+/// sensors do not exist on this model). Card surfaces adapt to the system
+/// appearance instead of forcing dark mode.
 struct PopoverView: View {
   @ObservedObject var controller: EngineController
   var openSection: (AppSection) -> Void
@@ -13,6 +15,35 @@ struct PopoverView: View {
   var onQuit: () -> Void
 
   @State private var detailsExpanded = true
+  @Environment(\.colorScheme) private var colorScheme
+
+  private var isDark: Bool { colorScheme == .dark }
+
+  /// Tinted metric-card surface: the design's subtle glass in dark mode,
+  /// a stronger tint with a defining stroke in light mode.
+  private func metricSurface(tint: Color) -> some View {
+    RoundedRectangle(cornerRadius: 12)
+      .fill(tint.opacity(isDark ? 0.12 : 0.20))
+      .overlay(
+        RoundedRectangle(cornerRadius: 12)
+          .stroke(tint.opacity(isDark ? 0 : 0.35), lineWidth: 1)
+      )
+  }
+
+  /// Neutral panel surface for sections, mode cards, and action buttons:
+  /// dark glass in dark mode, solid control background in light mode.
+  private func panelSurface(cornerRadius: CGFloat) -> some View {
+    RoundedRectangle(cornerRadius: cornerRadius)
+      .fill(
+        isDark
+          ? Color.white.opacity(0.05)
+          : Color(nsColor: .controlBackgroundColor)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: cornerRadius)
+          .stroke(Color.gray.opacity(isDark ? 0.12 : 0.25), lineWidth: 1)
+      )
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -26,7 +57,6 @@ struct PopoverView: View {
     }
     .padding(16)
     .frame(width: 400)
-    .preferredColorScheme(.dark)  // the design is dark-mode; keep it legible
   }
 
   // MARK: Header
@@ -123,7 +153,7 @@ struct PopoverView: View {
     }
     .padding(10)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+    .background(metricSurface(tint: tint))
   }
 
   private var temperatureCard: some View {
@@ -143,7 +173,7 @@ struct PopoverView: View {
     }
     .padding(10)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+    .background(metricSurface(tint: .orange))
   }
 
   private var temperatureValue: String {
@@ -387,10 +417,10 @@ struct PopoverView: View {
       }
       .padding(10)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+      .background(panelSurface(cornerRadius: 12))
       .overlay(
         RoundedRectangle(cornerRadius: 12)
-          .stroke(active ? tint.opacity(0.5) : Color.gray.opacity(0.15))
+          .stroke(active ? tint.opacity(0.5) : Color.clear)
       )
     }
     .buttonStyle(.plain)
@@ -442,8 +472,7 @@ struct PopoverView: View {
       }
       .frame(maxWidth: .infinity)
       .padding(.vertical, 10)
-      .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-      .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.15)))
+      .background(panelSurface(cornerRadius: 12))
     }
     .buttonStyle(.plain)
   }
@@ -454,8 +483,7 @@ struct PopoverView: View {
     content()
       .padding(14)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
-      .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.gray.opacity(0.12)))
+      .background(panelSurface(cornerRadius: 14))
   }
 
   private func percent(_ value: Double?) -> String {
